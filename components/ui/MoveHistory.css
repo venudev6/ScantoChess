@@ -1,0 +1,270 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+*/
+
+/* Move History (Revamped): Displays the list of moves made. */
+.move-history-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    font-size: 1rem;
+    line-height: 1.6;
+}
+
+.move-history-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0; /* Remove horizontal padding */
+    padding-right: 0.5rem; /* Keep a little space for the scrollbar */
+}
+
+/* For Webkit browsers */
+.move-history-content::-webkit-scrollbar {
+    width: 8px;
+}
+.move-history-content::-webkit-scrollbar-track {
+    background: transparent;
+}
+.move-history-content::-webkit-scrollbar-thumb {
+    background-color: var(--border-color);
+    border-radius: 4px;
+}
+
+.no-moves-placeholder {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100%;
+    color: var(--text-muted-color);
+    font-style: italic;
+}
+
+.move-list {
+    display: flex;
+    flex-direction: column;
+}
+
+/* A single line containing a move number and up to two moves. */
+.move-line {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: baseline;
+    padding: 2px 4px 2px 0; /* Remove left padding */
+    border-radius: 4px;
+}
+
+.move-number {
+    color: #374151; /* Darker gray for main line move number */
+    margin-right: 1px;
+    white-space: nowrap;
+    font-weight: 700;
+    font-size: 1rem;
+}
+
+
+.move-notation {
+  padding: 2px 6px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background-color 0.2s, color 0.2s;
+  white-space: nowrap; /* Prevent ugly wrapping inside a move */
+  display: inline-flex; /* Use flex to align icon nicely */
+  align-items: center;
+  gap: 0.25rem;
+  letter-spacing: 0.025em;
+}
+
+.move-notation.move-color-b {
+    margin-right: 3px;
+}
+
+.move-notation:not(.active):hover {
+  background-color: #e5e7eb; /* gray-200 */
+}
+
+.move-notation.active {
+  background-color: var(--primary-color);
+  color: #fff;
+}
+
+.comment-indicator-icon {
+    width: 1em;
+    height: 1em;
+    vertical-align: middle;
+    color: #9ca3af;
+}
+.move-notation.active .comment-indicator-icon {
+    color: #c7d2fe; /* light indigo */
+}
+
+.move-container {
+    display: inline-block;
+}
+
+.white-move {
+    margin-right: 0.75rem;
+}
+
+/* === NEW VARIATION STYLING === */
+.variation-line-wrapper {
+    position: relative;
+    display: block;
+    padding-left: 1px;
+}
+
+.delete-branch-icon {
+    display: none;
+    position: absolute;
+    left: -9px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 16px;
+    height: 16px;
+    color: var(--text-muted-color);
+    cursor: pointer;
+    z-index: 10;
+}
+.variation-line-wrapper:hover .delete-branch-icon {
+    display: block;
+}
+.delete-branch-icon:hover {
+    color: var(--error-color);
+}
+
+.variation-group {
+    display: block;
+    position: relative;
+    line-height: 1.7;
+    color: #4b5563;
+    margin-left: 0.5rem;
+    padding-left: calc(var(--depth, 0) * 14px + 10px);
+    border-left: 1.5px solid #e5e7eb;
+    font-size: 0.9rem;
+    padding-top: 0;
+    padding-bottom: 0;
+    margin-top: -0.9rem;
+}
+
+
+/* Depth-based fading for guide lines */
+.variation-group[style*="--depth: 0;"] { border-left-color: rgba(153, 153, 153, 0.8); }
+.variation-group[style*="--depth: 1;"] { border-left-color: rgba(204, 204, 204, 0.6); }
+.variation-group[style*="--depth: 2;"] { border-left-color: rgba(238, 238, 238, 0.4); }
+/* Catch-all for deeper levels */
+.variation-group[style*="--depth: 3;"],
+.variation-group[style*="--depth: 4;"],
+.variation-group[style*="--depth: 5;"] {
+    border-left-color: rgba(238, 238, 238, 0.4);
+}
+
+/* Depth-based contrast for text */
+.variation-group[style*="--depth: 2;"],
+.variation-group[style*="--depth: 3;"],
+.variation-group[style*="--depth: 4;"],
+.variation-group[style*="--depth: 5;"] {
+    color: #374151; /* Make deeper text darker for better contrast */
+}
+
+/* Consistent vertical spacing for sibling variation lines */
+.variation-group .variation-line-wrapper + .variation-line-wrapper {
+    margin-top: 2px;
+}
+.variation-line.archived {
+    opacity: 0.6;
+    font-style: italic;
+    color: var(--text-muted-color);
+    padding: 4px 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.restore-btn {
+    background: none;
+    border: none;
+    color: var(--primary-color);
+    font-size: 0.8rem;
+    font-weight: 500;
+    text-decoration: underline;
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 4px;
+}
+.restore-btn:hover {
+    background-color: #eef2ff;
+}
+
+
+/* If compact, display variations next to each other */
+.variation-group.compact {
+    display: inline;
+    border-left: none;
+    padding-left: 0.25rem;
+    margin-left: 0.25rem;
+}
+.variation-group.compact .variation-line-wrapper {
+    display: inline-block;
+    margin-right: 0.75rem;
+    margin-top: 0; /* Reset vertical spacing for compact view */
+    margin-bottom: 0;
+}
+.variation-group.compact .variation-line-wrapper:last-of-type {
+    margin-right: 0;
+}
+.variation-paren {
+    font-size: 0.9em;
+    color: #9ca3af;
+}
+.opening-paren { margin-right: 0.25rem; }
+.closing-paren { margin-left: 0.1rem; }
+
+.variation-move-number {
+    font-size: 0.9em;
+    color: #4b5563; /* Medium-dark gray for variation move number */
+    margin-right: 1px;
+    cursor: default;
+    font-weight: 700; /* Make variation move number bold */
+}
+
+.collapse-toggle {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #9ca3af;
+    font-size: 0.9em;
+    padding: 0 0.25rem;
+    vertical-align: middle;
+    transition: color 0.2s;
+    margin-right: 5px;
+}
+.collapse-toggle:hover { color: var(--primary-color); }
+
+.collapsed-indicator {
+    cursor: pointer;
+    color: #9ca3af;
+    padding: 0 0.5rem;
+    font-family: monospace;
+}
+.collapsed-indicator:hover { color: var(--primary-color); }
+
+
+/* === DESKTOP-SPECIFIC GRID LAYOUT === */
+@media (min-width: 769px) {
+
+    /* Each move line is its own strict grid, ensuring column alignment */
+    .move-line {
+        display: grid;
+        grid-template-columns: 3rem 1fr 1fr;
+        align-items: baseline;
+    }
+
+    .move-line > .move-number { grid-column: 1; text-align: right; }
+    .move-line > .move-container.white-move { grid-column: 2; padding-left: 1px; }
+    .move-line > .move-container.black-move { grid-column: 3; padding-left: 0.75rem; }
+    
+    /* Make the large margin only apply to top-level variations */
+    .move-list > .variation-group {
+        margin-left: 3rem;
+    }
+}

@@ -1,0 +1,48 @@
+.editor-board-panel {
+    grid-area: board-panel;
+    position: relative; /* For overlays */
+    display: flex;
+    align-items: center; /* Vertically center the board wrapper */
+    justify-content: center; /* Horizontally center */
+    min-height: 0; /* Necessary for flex children in a flex container */
+}
+
+/* Overlay for when a rescan is in progress */
+.rescanning-board-overlay {
+    position: absolute;
+    inset: 0;
+    background-color: rgba(255, 255, 255, 0.7);
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    font-weight: 500;
+    color: var(--text-color);
+    border-radius: 4px;
+}
+
+/* Toast message for when a rescan is complete */
+.rescan-toast {
+    position: absolute;
+    top: 1rem;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: var(--success-color);
+    color: white;
+    padding: 0.5rem 1rem;
+    border-radius: 9999px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    z-index: 11;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 500;
+    animation: fade-in-out-toast 3s ease-in-out forwards;
+}
+
+.rescan-toast svg {
+    width: 20px;
+    height: 20px;
+}

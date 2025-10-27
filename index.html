@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nandan's - Scan to Play Chess</title>
+    
+    <!-- PWA Manifest and Theme Color -->
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#6366f1">
+
+    <!-- Favicon: An SVG icon that represents the app in browser tabs and bookmarks. -->
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23F4F1ED'/%3E%3Ctext x='50' y='65' font-size='50' text-anchor='middle' dy='.1em'%3E%E2%99%9C%3C/text%3E%3C/svg%3E">
+    
+    <!-- Link to the external font used in the application. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Merriweather:wght@400;700&display=swap" rel="stylesheet">
+    
+    <!-- Stylesheet for the image cropping component -->
+    <link rel="stylesheet" href="https://aistudiocdn.com/react-image-crop@^11.0.10/dist/ReactCrop.css">
+
+    <!-- Local stylesheets for localhost compatibility -->
+    <link rel="stylesheet" href="/styles/global.css">
+    <link rel="stylesheet" href="/styles/components.css">
+    <link rel="stylesheet" href="/styles/layouts.css">
+    <link rel="stylesheet" href="/components/ui/CapturedPieces.css">
+    <link rel="stylesheet" href="/components/Chessboard.css">
+    <link rel="stylesheet" href="/components/views/InitialView.css">
+    <link rel="stylesheet" href="/components/views/CameraView.css">
+    <link rel="stylesheet" href="/components/views/ImagePreview.css">
+    <link rel="stylesheet" href="/components/views/PdfView.css">
+    <link rel="stylesheet" href="/components/views/LoadingView.css">
+    <link rel="stylesheet" href="/components/views/ResultView.css">
+    <link rel="stylesheet" href="/components/views/SolveView.css">
+    <link rel="stylesheet" href="/components/ui/MoveHistory.css">
+    <link rel="stylesheet" href="/components/views/LoginView.css">
+    <link rel="stylesheet" href="/components/views/AdminView.css">
+    <link rel="stylesheet" href="/components/ui/UserMenu.css">
+    <link rel="stylesheet" href="/components/views/HistoryView.css">
+    <link rel="stylesheet" href="/components/ui/ConfirmationDialog.css">
+    <link rel="stylesheet" href="/components/views/SavedGamesView.css">
+    <link rel="stylesheet" href="/components/result/EditorBoard.css">
+    <link rel="stylesheet" href="/components/result/EditorControls.css">
+    <link rel="stylesheet" href="/components/result/UserPanel.css">
+    <link rel="stylesheet" href="/components/views/ProfileView.css">
+    <link rel="stylesheet" href="/components/ui/PieceSetSelectorModal.css">
+    <link rel="stylesheet" href="/components/ui/UpdatePrompt.css">
+
+    <!-- Google Identity Services Script -->
+    <script src="https://accounts.google.com/gsi/client" async defer onload="onGoogleLibraryLoad()"></script>
+    <!-- Google API Client Script for Drive API -->
+    <script src="https://apis.google.com/js/api.js" async defer></script>
+    <!-- Tesseract.js for client-side OCR -->
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" async defer></script>
+    
+    <script>
+        // This function will be populated by the React app's AuthContext.
+        // It allows the GSI callback to trigger a login within the React state.
+        window.onGoogleSignIn = (credential) => {
+            console.error("onGoogleSignIn has not been initialized by the React application yet.");
+        };
+
+        // This function is the single source of truth for initializing the Google Sign-In client.
+        // It runs once when the GSI library has loaded.
+        function onGoogleLibraryLoad() {
+            if (typeof google === 'undefined' || !google.accounts) {
+                console.error("Google Identity Services library failed to load.");
+                return;
+            }
+
+            // Initialize the client. This MUST be called only once per page load.
+            google.accounts.id.initialize({
+                client_id: window.GOOGLE_CLIENT_ID,
+                callback: (response) => {
+                    // The callback is handled by the function our React app provides.
+                    window.onGoogleSignIn(response.credential);
+                },
+                // Explicitly setting auto_select to false is an extra layer of safety.
+                auto_select: false
+            });
+
+            // Check for an existing app session.
+            const sessionData = localStorage.getItem('mock_session');
+            if (sessionData) {
+                // If logged in, we MUST prevent the One Tap prompt from showing.
+                // This sets a cookie that the GSI library respects.
+                google.accounts.id.disableAutoSelect();
+            }
+            // We do not need an 'else' block. For logged-out users, the default
+            // behavior is correct: the prompt won't show automatically unless we call
+            // google.accounts.id.prompt(). The LoginView component will handle
+            // rendering the button for the user to click.
+        }
+    </script>
+<script type="importmap">
+{
+  "imports": {
+    "react-dom": "https://aistudiocdn.com/react-dom@^19.1.1",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.1.1/",
+    "react/": "https://aistudiocdn.com/react@^19.1.1/",
+    "react": "https://aistudiocdn.com/react@^19.1.1",
+    "pdfjs-dist/": "https://aistudiocdn.com/pdfjs-dist@5.4.149/",
+    "chess.js": "https://aistudiocdn.com/chess.js@^1.4.0",
+    "react-image-crop": "https://aistudiocdn.com/react-image-crop@^11.0.10",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.23.0"
+  }
+}
+</script>
+</head>
+<body>
+    <!-- The root DOM element where the React application will be mounted. -->
+    <div id="root">
+        <!-- A simple loading indicator to show while the engine initializes. -->
+        <div style="text-align: center; padding-top: 4rem; font-family: sans-serif; color: #6b7280;">
+            <h2>Loading Application...</h2>
+            <noscript>This application requires JavaScript to run.</noscript>
+        </div>
+    </div>
+    
+    <!-- Make the Google Client ID available globally for the pre-React script -->
+    <script>window.GOOGLE_CLIENT_ID = "974195773800-sil1nd8or5rprp2ef43kha29u2gbdg5j.apps.googleusercontent.com";</script>
+    
+    <!-- The main application script is loaded from a pre-compiled bundle. -->
+    <script type="module" src="/dist/bundle.js"></script>
+
+    <!-- PWA Service Worker Registration -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js').then(registration => {
+            console.log('Service Worker registered: ', registration);
+            registration.onupdatefound = () => {
+              const installingWorker = registration.installing;
+              if (installingWorker) {
+                installingWorker.onstatechange = () => {
+                  if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                    console.log('New content is available and will be used when all tabs for this page are closed.');
+                    const event = new CustomEvent('new-version-available', { detail: registration });
+                    document.dispatchEvent(event);
+                  }
+                };
+              }
+            };
+          }).catch(registrationError => {
+            console.log('Service Worker registration failed: ', registrationError);
+          });
+        });
+      }
+    </script>
+</body>
+</html>

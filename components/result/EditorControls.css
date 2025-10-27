@@ -1,0 +1,283 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+*/
+
+.editor-controls-panel {
+    grid-area: controls-panel;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    overflow-y: auto;
+    min-height: 0;
+}
+
+.result-image-panel {
+    grid-area: image;
+}
+.result-image-panel img {
+    object-fit: contain;
+    max-height: 25vh; /* Limit height to prevent large images from dominating */
+    min-height: 100px;
+}
+.rescannable-image-container {
+    position: relative;
+}
+.rescannable-image-container .rescan-overlay {
+    position: absolute;
+    inset: 0;
+    background-color: rgba(0,0,0,0.4);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    color: #ffffff;
+    font-weight: 600;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+    opacity: 0;
+    transition: opacity 0.2s ease-in-out;
+    border-radius: 0.25rem;
+    cursor: pointer;
+}
+.rescannable-image-container:hover .rescan-overlay,
+.is-rescanning .rescannable-image-container .rescan-overlay {
+    opacity: 1;
+}
+.is-rescanning .rescannable-image-container .rescan-overlay {
+    cursor: not-allowed;
+}
+.rescan-overlay .spinner-small {
+    width: 24px;
+    height: 24px;
+    border: 3px solid rgba(255,255,255,0.3);
+    border-bottom-color: #ffffff;
+}
+.rescan-overlay svg { width: 28px; height: 28px; }
+
+.editor-controls-panel.palette-is-open {
+    overflow: visible;
+    z-index: 20;
+    position: relative;
+}
+.board-actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: stretch; /* Make all items in the row equal height */
+}
+.palette-group {
+    position: relative;
+}
+.palette {
+    position: absolute;
+    bottom: calc(100% + 0.5rem);
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: #ffffff;
+    padding: 0.5rem;
+    border-radius: 0.5rem;
+    border: 1px solid var(--border-color);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    display: none;
+    gap: 0.25rem;
+    z-index: 50;
+    transition: opacity 0.2s ease, visibility 0.2s;
+    pointer-events: none;
+}
+.palette-group.open .palette {
+    display: flex;
+    pointer-events: auto;
+}
+.palette .piece {
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border-radius: 4px;
+    cursor: pointer;
+}
+.palette .piece:hover {
+    background-color: #eef2ff;
+}
+.board-actions .palette-group .btn-icon .piece {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+}
+
+/* Action Buttons at the bottom */
+.result-actions.control-section {
+    margin-top: auto;
+    padding: 1rem 0 0 0;
+    border-top: 1px solid var(--border-color);
+    background: transparent;
+    box-shadow: none;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
+    border-radius: 0;
+    flex-direction: row;
+    gap: 1rem;
+    align-items: flex-end; /* Align to the bottom */
+}
+.result-actions.control-section .btn { flex-basis: 0; }
+.result-actions.control-section .btn-back { flex-grow: 0; }
+.result-actions.control-section .btn-primary { flex-grow: 2; }
+
+
+.chess-turn-toggle {
+    position: relative;
+}
+.chess-turn-toggle input {
+    display: none;
+}
+.chess-turn-toggle .toggle-label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 80px;
+    height: 44px;
+    background-color: #e5e7eb;
+    border-radius: 22px;
+    cursor: pointer;
+    position: relative;
+    padding: 0 8px;
+    transition: background-color 0.3s ease;
+    box-sizing: border-box;
+}
+.chess-turn-toggle .pawn-icon {
+    width: 28px;
+    height: 28px;
+    z-index: 1;
+    pointer-events: none;
+    flex-shrink: 0;
+}
+.chess-turn-toggle .pawn-icon.black-pawn path {
+    fill: #6b7280;
+}
+.chess-turn-toggle input:checked + .toggle-label .pawn-icon.black-pawn path {
+    fill: #111827;
+}
+.chess-turn-toggle input:not(:checked) + .toggle-label .pawn-icon.white-pawn path {
+    stroke: #111827;
+}
+.chess-turn-toggle .knob {
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    width: 36px;
+    height: 36px;
+    background-color: #C1F5C1;
+    border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    transition: transform 0.3s ease, background-color 0.3s ease;
+    z-index: 0;
+}
+.chess-turn-toggle input:checked + .toggle-label .knob {
+    transform: translateX(36px);
+}
+.remove-zone {
+    height: 44px; /* Fixed height */
+    border: 2px dashed var(--dashed-border-color);
+    border-radius: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease-in-out;
+    color: var(--text-muted-color);
+    flex-grow: 1;
+    flex-basis: 0;
+    background-color: #f9fafb;
+    padding: 2px;
+    gap: 2px;
+}
+.remove-zone svg {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+}
+.remove-zone span {
+    font-size: 0.7rem;
+    line-height: 1;
+}
+
+/* Integrated FEN Input */
+.fen-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.fen-header svg {
+    width: 16px;
+    height: 16px;
+    color: var(--text-muted-color);
+}
+.fen-input-wrapper {
+    gap: 0;
+    align-items: stretch; /* Make input and button same height */
+}
+.fen-input-wrapper .fen-input {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+    border-right: none;
+    height: auto; /* Allow stretch to determine height */
+}
+.fen-input-wrapper .copy-fen-btn {
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+    background-color: #f9fafb;
+    border: 1px solid var(--border-color);
+    height: auto; /* Allow stretch to determine height */
+}
+.fen-input-wrapper .copy-fen-btn:disabled {
+    cursor: not-allowed;
+    background-color: #e5e7eb;
+    color: #9ca3af;
+    opacity: 1;
+}
+
+/* Sanitization/Correction Banner */
+.sanitization-banner {
+    margin-bottom: 0.75rem;
+    align-items: flex-start;
+}
+.sanitization-banner .validation-list {
+    list-style-type: disc;
+    padding-left: 1.25rem;
+    margin-top: 0.25rem;
+    font-size: 0.8rem;
+    line-height: 1.4;
+}
+.sanitization-banner button {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1.5rem;
+    line-height: 1;
+    color: inherit;
+    align-self: flex-start;
+    padding: 0 0.25rem;
+    margin-left: 0.5rem;
+}
+
+@media (max-width: 768px) and (orientation: portrait) {
+    .editor-controls-panel {
+        width: auto;
+        margin: 0;
+        padding: 1rem;
+        border-radius: 1.5rem 1.5rem 0 0; /* Rounded corners on top */
+        background-color: #ffffff;
+        box-shadow: 0 -4px 10px rgba(0,0,0,0.05);
+        border: 1px solid var(--border-color);
+        flex-grow: 1;
+        min-height: 0;
+        align-self: auto; /* Reset align-self for mobile */
+    }
+    .board-controls-title {
+        display: none;
+    }
+    .board-actions {
+        flex-wrap: nowrap;
+        align-items: center;
+    }
+}
