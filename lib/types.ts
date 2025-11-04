@@ -158,13 +158,22 @@ export interface BoundingBox {
     height: number;
 }
 
+
+/**
+ * Represents a single puzzle detected on a page, with its location and FEN.
+ */
+export interface DetectedPuzzle {
+    boundingBox: BoundingBox;
+    fen: string;
+}
+
 /**
  * Represents the record of all puzzles found on a single page of a PDF, as stored in IndexedDB.
  */
 export interface StoredPdfPuzzles {
     pdfId: number;
     page: number;
-    boundingBoxes: BoundingBox[];
+    puzzles: DetectedPuzzle[];
 }
 
 

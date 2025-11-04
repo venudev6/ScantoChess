@@ -17,12 +17,9 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Merriweather:wght@400;700&display=swap" rel="stylesheet">
     
-    <!-- Stylesheet for the image cropping component -->
-    <link rel="stylesheet" href="https://aistudiocdn.com/react-image-crop@^11.0.10/dist/ReactCrop.css">
-
     <!-- Local stylesheets for localhost compatibility -->
     <link rel="stylesheet" href="/styles/global.css">
-    <link rel="stylesheet" href="/styles/components.css">
+    <link rel="stylesheet" href="/components/ui/components.css">
     <link rel="stylesheet" href="/styles/layouts.css">
     <link rel="stylesheet" href="/components/ui/CapturedPieces.css">
     <link rel="stylesheet" href="/components/Chessboard.css">
@@ -53,8 +50,22 @@
     <script src="https://apis.google.com/js/api.js" async defer></script>
     <!-- Tesseract.js for client-side OCR -->
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" async defer></script>
+    <!-- OpenCV.js for client-side image processing -->
+    <script src="https://docs.opencv.org/4.9.0/opencv.js" async defer onload="onOpenCvReady()"></script>
     
     <script>
+        // Promise for OpenCV.js readiness
+        window.cvReady = new Promise((resolve) => {
+            window.onOpenCvReady = () => {
+                if (window.cv) {
+                    console.log('OpenCV.js loaded and ready.');
+                    resolve();
+                } else {
+                    console.error('onOpenCvReady called but cv is not defined.');
+                }
+            };
+        });
+
         // This function will be populated by the React app's AuthContext.
         // It allows the GSI callback to trigger a login within the React state.
         window.onGoogleSignIn = (credential) => {
@@ -100,10 +111,11 @@
     "react-dom/": "https://aistudiocdn.com/react-dom@^19.1.1/",
     "react/": "https://aistudiocdn.com/react@^19.1.1/",
     "react": "https://aistudiocdn.com/react@^19.1.1",
-    "pdfjs-dist/": "https://aistudiocdn.com/pdfjs-dist@5.4.149/",
+    "pdfjs-dist/": "https://aistudiocdn.com/pdfjs-dist@4.10.38/",
     "chess.js": "https://aistudiocdn.com/chess.js@^1.4.0",
-    "react-image-crop": "https://aistudiocdn.com/react-image-crop@^11.0.10",
-    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.23.0"
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.23.0",
+    "react-intersection-observer": "https://aistudiocdn.com/react-intersection-observer@^9.13.0",
+    "pdfjs-dist": "https://aistudiocdn.com/pdfjs-dist@4.10.38/build/pdf.mjs"
   }
 }
 </script>

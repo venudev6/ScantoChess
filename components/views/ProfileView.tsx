@@ -46,7 +46,9 @@ const ProfileView = ({ onBack }: ProfileViewProps) => {
         return (
             <div className="card admin-panel">
                 <p>You must be logged in to view this page.</p>
-                <button className="btn btn-secondary" onClick={onBack}>Back</button>
+                <button className="btn-icon" onClick={onBack} title="Back to App" aria-label="Back to App">
+                    <BackIcon />
+                </button>
             </div>
         );
     }
@@ -54,10 +56,10 @@ const ProfileView = ({ onBack }: ProfileViewProps) => {
     return (
         <div className="card admin-panel profile-view">
             <div className="admin-header">
-                <h1>My Profile</h1>
-                <button className="btn btn-secondary" onClick={onBack} aria-label="Back to App">
-                    <BackIcon /> Back
+                <button className="btn-icon" onClick={onBack} title="Back to App" aria-label="Back to App">
+                    <BackIcon />
                 </button>
+                <h1>My Profile</h1>
             </div>
 
             <form onSubmit={handleSubmit} className="profile-form">

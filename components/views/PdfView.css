@@ -3,347 +3,347 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
-/* PDF Viewer: Layout for viewing and selecting positions from PDFs. */
-.pdf-viewer-container {
+/* container & toolbar */
+.pdf-viewer-container { display:flex; flex-direction:column; height:100%; width:100%; position:relative; background:#f3f4f6; overflow:hidden; }
+.pdf-toolbar { position:sticky; top:0; z-index:60; display:flex; align-items:center; justify-content:center; padding:0.5rem 1rem; background:#fff; border-bottom:1px solid var(--border-color); box-shadow:0 2px 4px rgba(0,0,0,0.04); position: relative; }
+.pdf-toolbar-left { position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); display:flex; align-items:center; gap:0.75rem; }
+.pdf-toolbar-right { display:flex; align-items:center; gap:0.75rem; }
+.pdf-toolbar-center { flex:1; justify-content:center; display:flex; align-items:center; gap:0.75rem;}
+
+/* Modern Button Groups */
+.pdf-toolbar-group {
     display: flex;
-    gap: 0;
-    height: 100%; /* Fill the parent app-container */
-    width: 100%;
-    position: relative;
-}
-.pdf-loading-overlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: rgba(255, 255, 255, 0.85);
-    z-index: 100;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 1.5rem;
-    color: var(--text-color);
-    font-size: 1.1rem;
-    font-weight: 500;
-}
-.pdf-loading-overlay progress {
-    width: 80%;
-    max-width: 300px;
-}
-.pdf-loading-overlay .btn-cancel-scan {
-    padding: 0.5rem 1.25rem;
-}
-.pdf-sidebar {
-    flex-shrink: 0;
-    background-color: #ffffff;
-    border: 1px solid var(--border-color);
+    align-items: stretch; /* Make items fill height */
+    background-color: #f3f4f6;
     border-radius: 0.5rem;
-    padding: 0.5rem;
-    overflow-y: hidden;
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
+    border: 1px solid var(--border-color);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    overflow: hidden; /* Hide internal button radii */
 }
-/* Draggable resizer for the sidebar */
-.pdf-sidebar-resizer {
-    flex: 0 0 5px;
-    background-color: var(--background-color);
-    cursor: col-resize;
-    transition: background-color 0.2s;
-    position: relative;
-    border-left: 1px solid var(--border-color);
+
+/* Allow the dropdown to be visible when its group is active */
+.pdf-toolbar-group.dropdown-active {
+    overflow: visible;
+}
+
+.pdf-toolbar-group > .btn-icon,
+.pdf-toolbar-group > .page-input-container,
+.pdf-toolbar-group > .options-menu-container {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    border-radius: 0;
+    height: 40px; /* Consistent height for all items */
+}
+
+.pdf-toolbar-group > .btn-icon:hover:not(:disabled) {
+    background-color: #e5e7eb;
+}
+
+/* Add separators between items inside a group */
+.pdf-toolbar-group > *:not(:last-child) {
     border-right: 1px solid var(--border-color);
 }
-.pdf-sidebar-resizer:hover,
-.pdf-sidebar-resizer.is-resizing {
-    background-color: var(--primary-hover);
-}
-.pdf-thumbnail-list {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-}
-.pdf-thumbnail-item {
-    cursor: pointer;
-    border: 2px solid transparent;
-    border-radius: 0.25rem;
-    padding: 2px;
-    transition: border-color 0.2s;
-    position: relative;
-}
-.pdf-thumbnail-page-number {
-    position: absolute;
-    bottom: 4px;
-    right: 4px;
-    background-color: rgba(0, 0, 0, 0.7);
-    color: white;
-    font-size: 0.75rem;
-    font-weight: 600;
-    padding: 2px 6px;
-    border-radius: 0.25rem;
-    pointer-events: none;
-    transition: background-color 0.2s;
-}
-.pdf-thumbnail-item.active {
-    border-color: var(--primary-color);
-}
-.pdf-thumbnail-item.active .pdf-thumbnail-page-number {
-    background-color: var(--primary-color);
-}
-.pdf-thumbnail-item img, .pdf-thumbnail-placeholder {
-    width: 100%;
-    display: block;
-    border-radius: 1px;
-}
-.pdf-thumbnail-item img {
-    border: 1px solid var(--border-color);
-    aspect-ratio: 4 / 5;
-    object-fit: cover;
-}
-/* Placeholder for thumbnails that are still loading */
-.pdf-thumbnail-placeholder {
-    aspect-ratio: 4 / 5;
-    background-color: #e5e7eb;
-    border: 1px solid var(--border-color);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-.pdf-thumbnail-placeholder .spinner {
-    width: 24px;
-    height: 24px;
-    border-width: 3px;
-}
-/* Controls at the bottom of the sidebar */
-.sidebar-controls {
-    margin-top: auto;
-    padding-top: 0.5rem;
-    border-top: 1px solid var(--border-color);
-    font-size: 0.875rem;
-    color: var(--text-muted-color);
-}
-.sidebar-controls label {
-    display: block;
-    margin-bottom: 0.25rem;
-}
-.sidebar-controls input[type="range"] {
-    width: 100%;
-}
-.pdf-main {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    min-width: 0; /* Important for flexbox layout */
-}
-.pdf-toolbar {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 1rem;
-    background-color: #ffffff;
-    padding: 0.75rem 1rem;
-    border: 1px solid var(--border-color);
-    border-radius: 0.5rem;
-    flex-shrink: 0;
-}
-.pdf-toolbar-center {
-    display: flex;
-    align-items: center;
-    gap: 1.5rem;
-    justify-content: center;
-}
-.pdf-page-nav {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-}
-.page-input-container {
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-    background-color: var(--background-color);
-    border: 1px solid var(--border-color);
-    border-radius: 0.375rem;
-    padding-left: 0.75rem;
-    transition: box-shadow 0.2s, border-color 0.2s;
-    height: 38px;
-    flex-shrink: 0;
-}
-.page-input-container:focus-within {
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.2);
-}
-.page-total {
-    color: var(--text-muted-color);
-    font-size: 1rem;
-    padding-right: 0.75rem;
-    white-space: nowrap;
-}
-.page-input {
-    width: 4ch; /* Width based on character count */
-    height: 36px;
-    text-align: right;
+
+.pdf-toolbar-group .page-input-container {
     border: none;
-    background-color: transparent;
-    font-weight: 500;
-    font-size: 1rem;
-    color: var(--text-color);
-    -moz-appearance: textfield; /* Remove number input spinners in Firefox */
 }
-.page-input:focus {
-    outline: none;
+
+/* Page Navigation Specifics */
+.page-input-container { display:flex; align-items:center; gap:0.25rem; padding: 0 0.5rem; }
+.page-input { width:4ch; height:100%; text-align:center; border:none; background:transparent; font-weight:500; font-size:1rem; color:var(--text-color); }
+.page-input:focus { outline:none; }
+.page-total { color:var(--text-muted-color); font-size:0.95rem; }
+
+/* Options Dropdown */
+.options-menu-container {
+    position: relative;
+    display: flex; /* Ensures button inside behaves like other flex items */
 }
-/* Remove number input spinners in Webkit browsers */
-.page-input::-webkit-outer-spin-button,
-.page-input::-webkit-inner-spin-button {
-    -webkit-appearance: none;
-    margin: 0;
-}
-/* Main area for viewing the full PDF page */
-.pdf-page-view {
-    flex-grow: 1;
-    background-color: var(--text-muted-color);
+.options-dropdown {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    background-color: #fff;
     border-radius: 0.5rem;
-    overflow: auto; /* Enable scrolling for zoomed pages */
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    border: 1px solid var(--border-color);
+    width: 180px;
+    z-index: 70;
+    padding: 0.5rem;
     display: flex;
-    padding: 1rem;
-    position: relative;
-    -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+    flex-direction: column;
+    gap: 0.25rem;
+    animation: slide-down-fade 0.2s ease-out; /* from UserMenu.css */
 }
-.pdf-page-view .ReactCrop {
-    max-height: none;
-    max-width: none;
-    transform-origin: center;
-}
-.pdf-page-view img {
-    max-width: none; /* Allows image to be larger than its container for zooming */
-    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-}
-.pdf-page-wrapper {
-    position: relative;
-    margin: auto; /* Center the wrapper */
-}
-.puzzle-overlay-container {
-    position: absolute;
-    top: 0;
-    left: 0;
+.options-dropdown button {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
     width: 100%;
-    height: 100%;
-    pointer-events: none; /* Container itself shouldn't capture events */
-    z-index: 10;
-}
-.puzzle-overlay {
-    position: absolute;
-    border: 3px solid var(--primary-color);
-    background-color: rgba(99, 102, 241, 0.2);
+    padding: 0.6rem 0.75rem;
+    border: none;
+    background: transparent;
+    text-align: left;
+    border-radius: 0.375rem;
     cursor: pointer;
-    pointer-events: all; /* Individual overlays should be clickable */
-    transition: background-color 0.2s ease;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--text-color);
+}
+.options-dropdown button:hover {
+    background-color: #f3f4f6;
+}
+.options-dropdown button svg {
+    width: 20px;
+    height: 20px;
+    color: var(--text-muted-color);
+}
+
+
+/* body split */
+.pdf-body { display:flex; flex:1 1 auto; height:calc(100% - 62px); overflow:hidden; }
+
+/* filmstrip */
+.pdf-filmstrip { background:#e5e7eb; color:var(--text-color); border-right:1px solid var(--border-color); overflow-y:auto; padding:12px 8px; box-sizing:border-box; display:flex; flex-direction:column; position:relative; }
+.pdf-filmstrip-scroller { display:flex; flex-direction:column; gap:10px; }
+
+/* thumbnails */
+.pdf-thumb-item { position:relative; cursor:pointer; border-radius:4px; padding:0; box-sizing:border-box; min-height:110px; display:flex; align-items:center; justify-content:center; overflow:hidden; background:transparent; border:1px solid var(--border-color); }
+.pdf-thumb-item:hover { transform:translateY(-2px); box-shadow:0 6px 18px rgba(0,0,0,0.05); }
+.pdf-thumb-item.active { border:2px solid var(--primary-color); box-shadow:0 8px 24px rgba(0,0,0,0.08); }
+.pdf-thumb-img { display:block; width:100%; height:100%; object-fit:contain; }
+.pdf-thumb-placeholder { height:84px; display:flex; align-items:center; justify-content:center; color:var(--text-muted-color); font-size:12px; }
+.pdf-thumb-page-number { position:absolute; right:6px; bottom:6px; background:rgba(255,255,255,0.85); color:var(--text-color); font-size:11px; font-weight:600; padding:2px 6px; border-radius:4px; pointer-events:none; border:1px solid rgba(0,0,0,0.04); }
+
+/* main viewer */
+.pdf-main-view { flex:1 1 auto; overflow:auto; position:relative; -webkit-overflow-scrolling:touch; background:transparent; padding:24px; }
+.pdf-main-view.cropping-active { overflow: hidden; }
+
+.pdf-main-view-scroller { display:flex; flex-direction:column; align-items:center; gap:1.5rem; box-sizing:border-box; }
+
+.pdf-page-wrapper {
+  position: relative;
+  display: inline-block; /* Force shrink-wrapping around page content */
+  line-height: 0;
+  cursor: crosshair; /* Indicate that this area is interactive for cropping */
+}
+
+/* page */
+.pdf-page-container { background:#fff; border:1px solid #d1d5db; box-shadow:0 8px 28px rgba(0,0,0,0.12); line-height:0; position:relative; width:fit-content; }
+.pdf-page-placeholder {
+    background-color: #fff;
+    border: 1px solid #d1d5db;
+    box-shadow: 0 8px 28px rgba(0,0,0,0.12);
     display: flex;
     align-items: center;
     justify-content: center;
-    box-sizing: border-box;
 }
+
+/* puzzle overlay */
+.puzzle-overlay {
+  position: absolute;
+  z-index: 10;
+  cursor: pointer;
+  border: none;
+  background-color: transparent;
+  transition: background-color 0.2s ease;
+}
+
+/* Horizontal line in the middle */
+.puzzle-overlay::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 5%; /* Don't touch the edges */
+  right: 5%;
+  height: 2px;
+  background-color: rgba(211, 45, 39, 0.7); /* Logo red #D32D27 with transparency */
+  transform: translateY(-50%);
+  transition: background-color 0.2s ease;
+}
+
+/* Base style for corner markers */
+.corner-marker {
+  position: absolute;
+  width: 15px; /* Size of the L-shape arms */
+  height: 15px;
+  border-color: rgba(211, 45, 39, 0.7); /* Logo red with transparency */
+  border-style: solid;
+  transition: border-color 0.2s ease;
+}
+
+/* Individual corner positioning and borders */
+.corner-marker.top-left {
+  top: 0;
+  left: 0;
+  border-width: 3px 0 0 3px;
+}
+.corner-marker.top-right {
+  top: 0;
+  right: 0;
+  border-width: 3px 3px 0 0;
+}
+.corner-marker.bottom-left {
+  bottom: 0;
+  left: 0;
+  border-width: 0 0 3px 3px;
+}
+.corner-marker.bottom-right {
+  bottom: 0;
+  right: 0;
+  border-width: 0 3px 3px 0;
+}
+
+/* Hover effect */
 .puzzle-overlay:hover {
-    background-color: rgba(99, 102, 241, 0.4);
+  background-color: rgba(211, 45, 39, 0.1); /* Light red tint on hover */
 }
-.puzzle-overlay-text {
-    background-color: var(--primary-color);
-    color: white;
-    font-size: 1.2rem;
-    font-weight: bold;
-    width: 28px;
-    height: 28px;
+.puzzle-overlay:hover .corner-marker {
+    border-color: #D32D27; /* Solid red corners on hover */
+}
+.puzzle-overlay:hover::after {
+    background-color: #D32D27; /* Solid red line on hover */
+}
+
+
+/* crop layer: occupies the page wrapper exactly */
+.pdf-crop-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  pointer-events: none; /* Let clicks pass through unless a child element catches them */
+}
+
+/* New Cropping Tool Styles */
+.crop-box {
+    position: absolute;
+    background: transparent;
+    border: 2px solid var(--primary-color);
+    box-shadow: 0 0 10px rgba(0,0,0,0.3);
+    pointer-events: auto; /* This element and its children can be interacted with */
+    cursor: move;
+}
+
+.resize-handle {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    background: rgba(255, 255, 255, 0.9);
+    border: 1px solid var(--primary-color);
     border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
 }
-.pdf-zoom-controls {
+.resize-handle-nw { top: -7px; left: -7px; cursor: nwse-resize; }
+.resize-handle-ne { top: -7px; right: -7px; cursor: nesw-resize; }
+.resize-handle-sw { bottom: -7px; left: -7px; cursor: nesw-resize; }
+.resize-handle-se { bottom: -7px; right: -7px; cursor: nwse-resize; }
+.resize-handle-n { top: -7px; left: 50%; transform: translateX(-50%); cursor: ns-resize; }
+.resize-handle-s { bottom: -7px; left: 50%; transform: translateX(-50%); cursor: ns-resize; }
+.resize-handle-w { top: 50%; left: -7px; transform: translateY(-50%); cursor: ew-resize; }
+.resize-handle-e { top: 50%; right: -7px; transform: translateY(-50%); cursor: ew-resize; }
+
+.crop-actions {
+    position: absolute;
+    bottom: -52px; /* Position below the crop box */
+    left: 50%;
+    transform: translateX(-50%);
     display: flex;
-    align-items: center;
     gap: 0.5rem;
-}
-.pdf-toolbar-center .btn-icon {
-    width: 38px;
-    height: 38px;
+    pointer-events: auto;
 }
 
-/* RESPONSIVE OVERRIDES */
+/* loading overlay */
+.pdf-loading-overlay { position:absolute; inset:0; background:rgba(255,255,255,0.92); z-index:120; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1rem; }
 
-@media (max-width: 1024px) {
-    .pdf-viewer-container {
-        flex-direction: column;
-        height: auto;
-        gap: 0.5rem;
-    }
-    .pdf-sidebar {
-        flex-basis: auto;
-        flex-direction: row; /* Horizontal sidebar on mobile */
-        overflow-x: auto;
-        padding-bottom: 0.5rem;
-        width: 100% !important;
-        height: 125px;
-    }
-    .pdf-sidebar-resizer {
-        display: none; /* Hide resizer on mobile */
-    }
-    .pdf-thumbnail-list {
-        flex-direction: row;
-    }
-    .pdf-thumbnail-item {
-        width: 100px;
-        flex-shrink: 0;
-    }
-    .sidebar-controls {
-        display: none;
-    }
+/* In-page scan overlay */
+.pdf-page-scan-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.85); /* Translucent white */
+  backdrop-filter: blur(2px);
+  z-index: 50; /* Above the page canvas, below the crop box UI */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 1rem;
+  text-align: center;
+  border-radius: 4px; /* Match page container radius if any */
+  color: var(--text-color);
+}
+
+.pdf-page-scan-overlay .spinner {
+  width: 40px;
+  height: 40px;
+  border-width: 4px;
+}
+
+.pdf-page-scan-overlay progress {
+  width: 80%;
+  max-width: 250px;
+}
+
+/* helpers */
+.thumb-loading { color:var(--text-muted-color); padding:8px; font-size:0.95rem; }
+
+/* responsive */
+@media (max-width:900px) {
+  .pdf-filmstrip { display:none; }
+  .pdf-body { height: calc(100% - 62px); }
 }
 
 @media (max-width: 768px) {
-    .pdf-toolbar {
-        flex-wrap: nowrap;
-        justify-content: space-between;
-        gap: 0.25rem;
-        padding: 0.5rem;
-    }
-    .pdf-toolbar .btn-icon {
-        width: 38px;
-        height: 38px;
-    }
-    .pdf-toolbar .btn-icon svg {
-        width: 20px;
-        height: 20px;
-    }
-    .pdf-toolbar-center {
-        gap: 0.25rem;
-        flex-shrink: 1;
-        min-width: 0;
-    }
-    .pdf-toolbar .btn-deep-scan {
-        display: none;
-    }
-    .pdf-page-nav, .pdf-zoom-controls {
-        gap: 0.25rem;
-    }
-    .page-input-container {
-        height: 38px;
-        padding-left: 0.5rem;
-    }
-    .page-input {
-        height: 36px;
-        width: 4ch;
-        font-size: 0.9rem;
-    }
-    .page-total {
-        padding-right: 0.5rem;
-        font-size: 0.9rem;
-    }
+  .pdf-toolbar {
+    padding: 0.5rem;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    justify-content: center;
+    height: auto;
+  }
+
+  .pdf-toolbar-left {
+    position: static;
+    transform: none;
+  }
+  
+  .pdf-toolbar-left, .pdf-toolbar-right {
+    flex-basis: auto;
+    flex-grow: 1;
+  }
+
+  .pdf-toolbar-right {
+    justify-content: center;
+    order: -1; /* Move button groups to the top row on wrap */
+    flex-basis: 100%;
+  }
+
+  .pdf-toolbar-group {
+    flex-shrink: 1;
+    min-width: 0;
+  }
+
+  .pdf-toolbar-group > .btn-icon,
+  .pdf-toolbar-group > .page-input-container,
+  .pdf-toolbar-group > .options-menu-container {
+      height: 38px;
+  }
+
+  .pdf-toolbar-group .btn-icon {
+      width: 40px;
+  }
+  
+  .page-input-container {
+    padding: 0 0.25rem;
+  }
+  .page-input {
+    width: 3ch;
+  }
+   .pdf-toolbar .btn-icon svg {
+    width: 20px;
+    height: 20px;
+  }
 }

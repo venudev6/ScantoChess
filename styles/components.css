@@ -77,6 +77,11 @@
   text-decoration: none;
   height: 3rem; /* 48px */
 }
+.btn svg {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+}
 .btn:disabled, .btn.disabled {
   opacity: 0.6;
   cursor: not-allowed;

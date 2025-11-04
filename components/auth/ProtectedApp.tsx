@@ -7,6 +7,7 @@ import { useAuth } from '../../context/AuthContext';
 import { Chess } from 'chess.js';
 
 // Import all the different "views" or "screens" of the application.
+// Test
 import { InitialView } from '../views/InitialView';
 import CameraView from '../views/CameraView';
 import ImagePreview from '../views/ImagePreview';
@@ -25,7 +26,6 @@ import { analyzeImagePosition } from '../../lib/gemini';
 import { authService, googleDriveService } from '../../lib/authService';
 import { useAppSettings } from '../../hooks/useAppSettings';
 import { usePdfManager } from '../../hooks/usePdfManager';
-// FIX: 'generateBoardThumbnail' is exported from 'lib/utils', not 'lib/fenUtils'.
 import { fenToBoardState } from '../../lib/fenUtils';
 import { dataUrlToBlob, computeImageHash, generateBoardThumbnail, determineTurnFromImage } from '../../lib/utils';
 import { db } from '../../lib/db';
@@ -38,6 +38,7 @@ type AnalysisResult = {
     details: AnalysisDetails;
     scanDuration: number | null;
     clientProcessingTime: number | null;
+    serverProcessingTime: number | null;
 };
 
 type AppSettingsHook = ReturnType<typeof useAppSettings>;
@@ -86,7 +87,6 @@ export const ProtectedApp = ({
     const [isCameraAvailable, setIsCameraAvailable] = useState<boolean>(true);
 
 
-    // FIX: Refactored to fix "used before declaration" error. The sync logic is now handled in this component.
     const {
         storedPdfs, isProcessingPdf, selectedPdf,
         loadStoredPdfs, handlePdfSelect: baseHandlePdfSelect, handleStoredPdfSelect, handleDeletePdf, handlePdfStateChange, clearSelectedPdf
@@ -100,7 +100,6 @@ export const ProtectedApp = ({
 
         const isGoogle = await authService.isGoogleUser(user);
         if (!isGoogle) {
-            // Silently fail for non-google users, the UI should prevent this.
             console.log("Drive sync is only available for Google users.");
             return;
         }
@@ -125,7 +124,6 @@ export const ProtectedApp = ({
             await performSync(driveAccessToken);
         } else {
             setPdfToSync(pdfId);
-            //authorizeDrive();
         }
     }, [user, driveAccessToken, authorizeDrive, loadStoredPdfs]);
 
@@ -136,7 +134,6 @@ export const ProtectedApp = ({
         }
     }, [driveAccessToken, pdfToSync, syncPdfToDriveWithAuth]);
 
-    // Effect to sync any unsynced local files when a user logs in (moved from usePdfManager).
     useEffect(() => {
         const syncLocalFiles = async () => {
             if (user) {
@@ -160,7 +157,6 @@ export const ProtectedApp = ({
     useEffect(() => {
         loadStoredPdfs();
 
-        // Check for camera availability
         if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
             navigator.mediaDevices.enumerateDevices()
                 .then(devices => {
@@ -214,7 +210,6 @@ export const ProtectedApp = ({
         setAppState('preview');
     };
 
-    // Wrapper for handlePdfSelect to trigger Drive sync after a PDF is saved.
     const handlePdfSelect = async (file: File) => {
         const newId = await baseHandlePdfSelect(file);
         if (newId && user) {
@@ -231,10 +226,10 @@ export const ProtectedApp = ({
         if (isGuestPastTrial) return onAuthRequired();
         try {
             const blob = await dataUrlToBlob(imageUrl);
-            const file = new File([blob], 'sample.png', { type: 'image/png' });
+            const file = new File([blob], 'sample.jpg', { type: blob.type });
             setImageData(file);
             setCroppedImageDataUrl(imageUrl);
-            setAnalysisResult({ fen, turn: fenToBoardState(fen).turn, details: { confidence: null, reasoning: null, uncertainSquares: [] }, scanDuration: null, clientProcessingTime: null });
+            setAnalysisResult({ fen, turn: fenToBoardState(fen).turn, details: { confidence: null, reasoning: null, uncertainSquares: [] }, scanDuration: null, clientProcessingTime: null, serverProcessingTime: null });
             setAppState('result');
         } catch (e) {
             console.error("Failed to load sample image", e);
@@ -251,16 +246,18 @@ export const ProtectedApp = ({
         const totalStartTime = performance.now();
     
         try {
-            // New: Client-side turn detection
-            const { turn: clientSideTurn, ocr_turn_detection_ms, shape_turn_detection_ms } = await determineTurnFromImage(file);
-            
-            const result = await analyzeImagePosition(file);
-            
-            const total_scan_ms = performance.now() - totalStartTime;
+            const [serverResult, turnResult] = await Promise.all([
+                analyzeImagePosition(file),
+                determineTurnFromImage(file)
+            ]);
 
-            // New: Override turn from server with client-side detection
-            const fenParts = result.fen.split(' ');
-            const serverTurn = fenParts.length > 1 ? fenParts[1] : 'w'; // Default to 'w' if not present
+            const { turn: clientSideTurn, ocr_turn_detection_ms, shape_turn_detection_ms } = turnResult;
+
+            const total_scan_ms = performance.now() - totalStartTime;
+            const serverProcessingTime = serverResult.timings?.total_scan_ms ?? null;
+
+            const fenParts = serverResult.fen.split(' ');
+            const serverTurn = fenParts.length > 1 ? fenParts[1] : 'w';
             fenParts[1] = clientSideTurn;
             const correctedFen = fenParts.join(' ');
             
@@ -270,10 +267,10 @@ export const ProtectedApp = ({
                 fen: correctedFen,
                 turn: clientSideTurn,
                 details: {
-                    ...result.details,
-                    failureReason: result.failureReason,
+                    ...serverResult.details,
+                    failureReason: serverResult.failureReason,
                     timingSummary: {
-                        ...result.timings,
+                        ...serverResult.timings,
                         total_scan_ms,
                         ocr_turn_detection_ms,
                         shape_turn_detection_ms,
@@ -281,6 +278,7 @@ export const ProtectedApp = ({
                 },
                 scanDuration: total_scan_ms / 1000,
                 clientProcessingTime: clientProcessingTime,
+                serverProcessingTime: serverProcessingTime,
             };
     
             setAnalysisResult(finalAnalysisResult);
@@ -306,6 +304,21 @@ export const ProtectedApp = ({
         await handleCropConfirm(file, clientProcessingTime);
     };
 
+    const handlePreScannedPuzzleFound = (fen: string) => {
+        soundManager.play('UI_CLICK');
+        setAnalysisResult({
+            fen: fen,
+            turn: fenToBoardState(fen).turn,
+            details: { confidence: null, reasoning: 'Loaded from deep scan cache.', uncertainSquares: [] },
+            scanDuration: null,
+            clientProcessingTime: null,
+            serverProcessingTime: null,
+        });
+        setInitialGameHistory(null);
+        setLoadedGameId(undefined);
+        setAppState('solve');
+    };
+
     const handleContinueManually = () => {
         setAnalysisResult({
             fen: '8/8/8/8/8/8/8/8 w - - 0 1',
@@ -313,6 +326,7 @@ export const ProtectedApp = ({
             details: { confidence: null, reasoning: 'Manual board setup after scan failure.', uncertainSquares: [] },
             scanDuration: null,
             clientProcessingTime: null,
+            serverProcessingTime: null,
         });
         setCroppedImageDataUrl(null); 
         setAppState('result');
@@ -325,14 +339,19 @@ export const ProtectedApp = ({
             const blob = await dataUrlToBlob(croppedImageDataUrl);
             const file = new File([blob], 'rescan.webp', { type: 'image/webp' });
             
-            // New: Client-side turn detection on rescan
-            const { turn: clientSideTurn, ocr_turn_detection_ms, shape_turn_detection_ms } = await determineTurnFromImage(file);
+            const totalStartTime = performance.now();
 
-            const result = await analyzeImagePosition(file, true);
-            const scanDuration = result.timings.total_scan_ms / 1000;
+            const [serverResult, turnResult] = await Promise.all([
+                analyzeImagePosition(file, true),
+                determineTurnFromImage(file)
+            ]);
+
+            const { turn: clientSideTurn, ocr_turn_detection_ms, shape_turn_detection_ms } = turnResult;
+
+            const total_scan_ms = performance.now() - totalStartTime;
+            const serverProcessingTime = serverResult.timings?.total_scan_ms ?? null;
             
-            // New: Override turn from server with client-side detection
-            const fenParts = result.fen.split(' ');
+            const fenParts = serverResult.fen.split(' ');
             const serverTurn = fenParts.length > 1 ? fenParts[1] : 'w';
             fenParts[1] = clientSideTurn;
             const correctedFen = fenParts.join(' ');
@@ -343,15 +362,16 @@ export const ProtectedApp = ({
                 fen: correctedFen,
                 turn: clientSideTurn,
                 details: {
-                    ...result.details,
+                    ...serverResult.details,
                     timingSummary: {
-                        ...result.timings,
+                        ...serverResult.timings,
                         ocr_turn_detection_ms,
                         shape_turn_detection_ms
                     }
                 },
-                scanDuration: scanDuration,
-                clientProcessingTime: null, // Rescan is server-only for this metric
+                scanDuration: total_scan_ms / 1000,
+                clientProcessingTime: null,
+                serverProcessingTime: serverProcessingTime,
             });
             setRescanCounter(c => c + 1);
         } catch(e) {
@@ -387,6 +407,7 @@ export const ProtectedApp = ({
                 details: { confidence: null, reasoning: 'Loaded from saved games.', uncertainSquares: [] },
                 scanDuration: null,
                 clientProcessingTime: null,
+                serverProcessingTime: null,
             });
             setInitialGameHistory(game.moveHistory);
             setLoadedGameId(id);
@@ -407,6 +428,7 @@ export const ProtectedApp = ({
                 details: { confidence: null, reasoning: 'Loaded from history.', uncertainSquares: [] },
                 scanDuration: null,
                 clientProcessingTime: null,
+                serverProcessingTime: null,
             });
             setInitialGameHistory(game.moveHistory);
             setLoadedGameId(id);
@@ -424,7 +446,6 @@ export const ProtectedApp = ({
     };
 
 
-    // Render logic for different application states
     const renderContent = () => {
         switch (appState) {
             case 'initial':
@@ -447,24 +468,23 @@ export const ProtectedApp = ({
                         isCameraAvailable={isCameraAvailable}
                         onProfileClick={onProfileClick}
                         triggerUpload={triggerUpload}
-                        // FIX: Pass the onUploadTriggered prop down from ProtectedApp's props.
                         onUploadTriggered={onUploadTriggered}
                     />
                 );
             case 'camera':
                 return <CameraView onCapture={handleFileSelect} onBack={resetToInitial} />;
             case 'preview':
-                return imageData && <ImagePreview imageFile={imageData} onConfirm={handleCropConfirm} onBack={resetToInitial} />;
+                return imageData && <ImagePreview imageFile={imageData} onPuzzleSelect={handlePreScannedPuzzleFound} onBack={resetToInitial} />;
             case 'pdfViewer':
                 return selectedPdf && <PdfView 
                     pdfId={selectedPdf.id}
-                    pdfDoc={selectedPdf.doc} 
-                    isDocLoading={isProcessingPdf}
+                    pdfFile={selectedPdf.file} 
                     initialPage={selectedPdf.lastPage}
                     initialZoom={selectedPdf.lastZoom}
                     onCropConfirm={handlePdfCropConfirm} 
                     onBack={resetToInitial} 
                     onStateChange={handlePdfStateChange}
+                    onPreScannedPuzzleFound={handlePreScannedPuzzleFound}
                 />;
             case 'loading':
                 return <LoadingView onCancel={resetToInitial} scanFailed={scanFailed} onRetry={() => imageData && handleCropConfirm(imageData, 0)} imageFile={imageData} errorMessage={scanFailureMessage} onContinueManually={handleContinueManually} />;
@@ -479,6 +499,7 @@ export const ProtectedApp = ({
                         analysisDetails={analysisResult.details}
                         scanDuration={analysisResult.scanDuration}
                         clientProcessingTime={analysisResult.clientProcessingTime}
+                        serverProcessingTime={analysisResult.serverProcessingTime}
                         onRescan={handleRescan}
                         isRescanning={isRescanning}
                         onRescanComplete={rescanCounter}
@@ -500,6 +521,7 @@ export const ProtectedApp = ({
                         scanDuration={analysisResult.scanDuration}
                         analysisDetails={analysisResult.details}
                         clientProcessingTime={analysisResult.clientProcessingTime}
+                        serverProcessingTime={analysisResult.serverProcessingTime}
                         onBack={() => {
                             setInitialGameHistory(null);
                             setLoadedGameId(undefined);

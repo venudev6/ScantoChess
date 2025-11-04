@@ -26,7 +26,6 @@ interface ResultViewProps {
     analysisDetails: AnalysisDetails;
     scanDuration: number | null;
     clientProcessingTime: number | null;
-    // FIX: Add serverProcessingTime to the props interface to match what's being passed from ProtectedApp.tsx.
     serverProcessingTime: number | null;
     onRescan: () => void;
     isRescanning: boolean;
@@ -163,7 +162,6 @@ const ResultView = ({
                     appSettings={appSettings}
                     scanDuration={scanDuration}
                     clientProcessingTime={clientProcessingTime}
-                    // FIX: Pass the serverProcessingTime prop to UserPanel as it is required.
                     serverProcessingTime={serverProcessingTime}
                     analysisDetails={analysisDetails}
                     displayMode='full'

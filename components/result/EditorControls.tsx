@@ -193,8 +193,8 @@ const EditorControls = ({
                 </div>
             </div>
             <div className="control-section result-actions">
-                <button className="btn btn-secondary btn-back" onClick={onBack} title="Go back to the previous screen" aria-label="Go back">
-                    <BackIcon /> Back
+                <button className="btn-icon" onClick={onBack} title="Go back" aria-label="Go back">
+                    <BackIcon />
                 </button>
                 <button className="btn btn-primary" onClick={() => onAnalyze(fen)} disabled={!isFenValid} title="Analyze this position">
                     Analyse Position

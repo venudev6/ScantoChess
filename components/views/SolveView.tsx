@@ -10,139 +10,19 @@ import Chessboard from '../Chessboard';
 import CapturedPieces from '../ui/CapturedPieces';
 import MoveHistory from '../ui/MoveHistory';
 import { soundManager } from '../../lib/SoundManager';
-import { BackIcon, FlipIcon, FirstMoveIcon, PrevMoveIcon, NextMoveIcon, LastMoveIcon, BookmarkIcon, BookmarkFilledIcon, CheckIcon, CloseIcon, ShareIcon, DownloadIcon, CopyIcon } from '../ui/Icons';
+import { BackIcon, FlipIcon, FirstMoveIcon, PrevMoveIcon, NextMoveIcon, LastMoveIcon, BookmarkIcon, BookmarkFilledIcon, CheckIcon, CloseIcon, ShareIcon, DownloadIcon, CopyIcon, HomeIcon, AdviceIcon, PlusIcon } from '../ui/Icons';
 import { PIECE_SETS, PIECE_NAMES } from '../../lib/chessConstants';
 import { useChessGame } from '../../hooks/useChessGame';
 import { useBoardDrawing } from '../../hooks/useBoardDrawing';
 import { useCapturedPieces } from '../../hooks/useCapturedPieces';
 import { db } from '../../lib/db';
-import { generateBoardThumbnail, generateBoardImageForSharing } from '../../lib/utils';
+import { generateBoardThumbnail } from '../../lib/utils';
 import type { AppState, PieceColor, PieceSymbol, HistoryEntry, User, StoredGame, AnalysisDetails } from '../../lib/types';
 import UserPanel from '../result/UserPanel';
 import { useAppSettings } from '../../hooks/useAppSettings';
 import './SolveView.css';
 import { useStockfish } from '../../hooks/useStockfish';
-
-// --- Helper for Share Modal ---
-const convertSvgToPngDataURL = (svgUrl: string, width: number, height: number): Promise<string> => {
-    return new Promise((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => {
-            const canvas = document.createElement('canvas');
-            canvas.width = width;
-            canvas.height = height;
-            const ctx = canvas.getContext('2d');
-            if (ctx) {
-                ctx.drawImage(img, 0, 0, width, height);
-                resolve(canvas.toDataURL('image/png'));
-            } else {
-                reject(new Error("Could not get canvas context."));
-            }
-        };
-        img.onerror = () => reject(new Error("Failed to load SVG image for conversion."));
-        img.src = svgUrl;
-    });
-};
-
-
-// --- Share Modal Component ---
-interface ShareModalProps {
-    isOpen: boolean;
-    onClose: () => void;
-    chessInstance: Chess;
-    history: HistoryEntry[];
-    initialFen: string;
-}
-
-const ShareModal = ({ isOpen, onClose, chessInstance, history, initialFen }: ShareModalProps) => {
-    const [pngDataUrl, setPngDataUrl] = useState('');
-    const [copyState, setCopyState] = useState<{ fen: 'idle' | 'copied'; pgn: 'idle' | 'copied'; image: 'idle' | 'copied'; }>({ fen: 'idle', pgn: 'idle', image: 'idle' });
-    
-    const pgn = useMemo(() => {
-        if (!isOpen) return '';
-        const tempGame = new Chess(initialFen);
-        history.forEach(move => {
-            try {
-                tempGame.move({ from: move.from, to: move.to, promotion: move.promotion });
-            } catch(e) { /* ignore invalid moves */ }
-        });
-        return tempGame.pgn();
-    }, [isOpen, history, initialFen]);
-
-    useEffect(() => {
-        if (isOpen) {
-            const fen = chessInstance.fen();
-            const svgUrl = generateBoardImageForSharing(fen);
-            convertSvgToPngDataURL(svgUrl, 400, 400).then(setPngDataUrl).catch(console.error);
-        } else {
-            setPngDataUrl('');
-        }
-    }, [isOpen, chessInstance]);
-    
-    const handleCopy = (text: string, type: 'fen' | 'pgn') => {
-        if (!text) return;
-        navigator.clipboard.writeText(text).then(() => {
-            setCopyState(prev => ({ ...prev, [type]: 'copied' }));
-            setTimeout(() => setCopyState(prev => ({...prev, [type]: 'idle'})), 2000);
-        });
-    };
-    
-    const handleCopyImage = async () => {
-        if (!pngDataUrl) return;
-        try {
-            const response = await fetch(pngDataUrl);
-            const blob = await response.blob();
-            await navigator.clipboard.write([ new ClipboardItem({ 'image/png': blob }) ]);
-            setCopyState(prev => ({ ...prev, image: 'copied' }));
-            setTimeout(() => setCopyState(prev => ({...prev, image: 'idle'})), 2000);
-        } catch (err) {
-            console.error('Failed to copy image: ', err);
-            alert('Failed to copy image to clipboard. Your browser might not support this feature or require a secure context (HTTPS).');
-        }
-    };
-
-    if (!isOpen) return null;
-
-    return createPortal(
-        <div className="bookmark-modal-overlay" onClick={onClose}>
-            <div className="bookmark-modal share-modal" onClick={(e) => e.stopPropagation()}>
-                <div className="bookmark-modal-header">
-                    <h3>Share Position</h3>
-                    <button onClick={onClose} className="close-btn"><CloseIcon /></button>
-                </div>
-                <div className="share-image-preview">
-                    {pngDataUrl ? <img src={pngDataUrl} alt="Chess position preview" /> : <div className="share-image-placeholder"><div className="spinner"></div></div>}
-                </div>
-                <div className="bookmark-form-group">
-                    <label>Export Image</label>
-                    <div className="share-button-group">
-                         <a href={pngDataUrl} download={`chess-position.png`} className="btn btn-secondary"><DownloadIcon /> Download PNG</a>
-                        <button className="btn btn-secondary" onClick={handleCopyImage}>{copyState.image === 'copied' ? <CheckIcon/> : <CopyIcon />} Copy Image</button>
-                    </div>
-                </div>
-                <div className="bookmark-form-group">
-                    <label htmlFor="fen-share">FEN</label>
-                    <div className="fen-input-wrapper">
-                        <input id="fen-share" type="text" value={chessInstance.fen()} readOnly className="fen-input" />
-                        <button className="btn-icon copy-fen-btn" onClick={() => handleCopy(chessInstance.fen(), 'fen')} title="Copy FEN">{copyState.fen === 'copied' ? <CheckIcon /> : <CopyIcon />}</button>
-                    </div>
-                </div>
-                <div className="bookmark-form-group">
-                    <label htmlFor="pgn-share">PGN (Main Line)</label>
-                    <div className="fen-input-wrapper">
-                        <textarea id="pgn-share" value={pgn} readOnly className="fen-input" rows={2}></textarea>
-                        <button className="btn-icon copy-fen-btn" onClick={() => handleCopy(pgn, 'pgn')} title="Copy PGN">{copyState.pgn === 'copied' ? <CheckIcon /> : <CopyIcon />}</button>
-                    </div>
-                </div>
-                 <div className="bookmark-modal-actions">
-                    <button className="btn btn-primary" onClick={onClose}>Done</button>
-                </div>
-            </div>
-        </div>,
-        document.body
-    );
-};
-
+import { ShareModal } from '../ui/ShareModal';
 
 // --- Bookmark Modal Component ---
 interface BookmarkModalProps {
@@ -256,6 +136,7 @@ interface SolveViewProps {
     scanDuration: number | null;
     analysisDetails: AnalysisDetails | null;
     clientProcessingTime: number | null;
+    serverProcessingTime: number | null;
 }
 
 /**
@@ -264,7 +145,7 @@ interface SolveViewProps {
  */
 const SolveView = ({
     initialFen, onBack, onHome, appSettings, onNextPuzzle, source, initialHistory, sourceView, initialGameId,
-    user, isLoggedIn, onLogout, onAdminPanelClick, onSavedGamesClick, onHistoryClick, onProfileClick, onAuthRequired, scanDuration, clientProcessingTime,
+    user, isLoggedIn, onLogout, onAdminPanelClick, onSavedGamesClick, onHistoryClick, onProfileClick, onAuthRequired, scanDuration, clientProcessingTime, serverProcessingTime,
     analysisDetails
 }: SolveViewProps) => {
     const {
@@ -279,6 +160,7 @@ const SolveView = ({
     const [playerSide, setPlayerSide] = useState<'w' | 'b' | null>(null);
     const [isShareModalOpen, setIsShareModalOpen] = useState(false);
     const isMakingEngineMove = useRef(false);
+    const [isAnalysisModalOpen, setIsAnalysisModalOpen] = useState(false);
 
 
     const [highlightedSquares, setHighlightedSquares] = useState<ChessJSSquare[]>([]);
@@ -488,7 +370,11 @@ const SolveView = ({
         }
     };
 
-    const handleAnalysisClick = (e: React.MouseEvent<HTMLAnchorElement>) => { if (cooldown > 0) e.preventDefault(); };
+    const handleAnalysisClickWithCooldown = () => {
+        if (cooldown <= 0) {
+            setIsAnalysisModalOpen(true);
+        }
+    };
 
     const lastMove = historyIndex >= 0 ? { from: mainLineHistory[historyIndex].from, to: mainLineHistory[historyIndex].to } : null;
     const backButtonTitle = sourceView === 'result' ? "Back to Editor" : "Back to List";
@@ -511,6 +397,7 @@ const SolveView = ({
                     appSettings={appSettings} 
                     scanDuration={scanDuration} 
                     clientProcessingTime={clientProcessingTime}
+                    serverProcessingTime={serverProcessingTime}
                     analysisDetails={analysisDetails} 
                     displayMode="compact"
                     debugLog={stockfish.debugLog}
@@ -521,27 +408,29 @@ const SolveView = ({
                     turn={turn}
                 />
                 <div className="board-area" ref={boardAreaRef} onContextMenu={(e) => e.preventDefault()} onPointerDown={handleBoardPointerDown} onPointerMove={handleBoardPointerMove} onPointerUp={handleBoardPointerUp}>
-                    <Chessboard 
-                        boardState={currentBoard} 
-                        onSquareClick={handleBoardClick} 
-                        selectedSquare={selectedSquareCoords} 
-                        lastMove={lastMove}
-                        possibleMoves={possibleMoves} 
-                        userHighlights={highlightedSquares} 
-                        isFlipped={isFlipped} 
-                        pieceTheme={appSettings.pieceTheme} 
-                    />
-                    {renderedArrows.length > 0 && ( <svg className="drawing-overlay" width="100%" height="100%"><defs><marker id="arrowhead" viewBox="0 -24 41.57 48" refX="0" refY="0" markerUnits="userSpaceOnUse" markerWidth="48" markerHeight="48" orient="auto"><polygon points="41.57,0 0,-24 0,24" /></marker></defs>{renderedArrows}</svg> )}
-                    {isGameOver && ( <div className="game-over-overlay"><h2>{gameStatus}</h2><button className="btn btn-secondary" onClick={() => { onNextPuzzle(); }}>{nextButtonText}</button></div> )}
+                    <div className="board-and-captures-wrapper">
+                        <div className="board-wrapper-for-overlays">
+                            <Chessboard 
+                                boardState={currentBoard} 
+                                onSquareClick={handleBoardClick} 
+                                selectedSquare={selectedSquareCoords} 
+                                lastMove={lastMove}
+                                possibleMoves={possibleMoves} 
+                                userHighlights={highlightedSquares} 
+                                isFlipped={isFlipped} 
+                                pieceTheme={appSettings.pieceTheme} 
+                            />
+                            {renderedArrows.length > 0 && ( <svg className="drawing-overlay" width="100%" height="100%"><defs><marker id="arrowhead" viewBox="0 -24 41.57 48" refX="0" refY="0" markerUnits="userSpaceOnUse" markerWidth="48" markerHeight="48" orient="auto"><polygon points="41.57,0 0,-24 0,24" /></marker></defs>{renderedArrows}</svg> )}
+                            {isGameOver && ( <div className="game-over-overlay"><h2>{gameStatus}</h2><button className="btn btn-secondary" onClick={() => { onNextPuzzle(); }}>{nextButtonText}</button></div> )}
+                        </div>
+                        <div className="captured-pieces-row">
+                            <CapturedPieces color="b" pieces={capturedBlackPieces} scoreAdvantage={materialAdvantage.whiteAdvantage} pieceTheme={appSettings.pieceTheme} displayMode="inline" />
+                            <CapturedPieces color="w" pieces={capturedWhitePieces} scoreAdvantage={materialAdvantage.blackAdvantage} pieceTheme={appSettings.pieceTheme} displayMode="inline" />
+                        </div>
+                    </div>
                     {showSaveConfirmation && createPortal( <div className="save-toast"><CheckIcon /> Game Saved</div>, document.body )}
                 </div>
                 <div className="solve-controls">
-                    <div className="solve-view-header">
-                         <div className="captured-pieces-stack">
-                            <CapturedPieces color="b" pieces={capturedBlackPieces} scoreAdvantage={materialAdvantage.blackAdvantage} pieceTheme={appSettings.pieceTheme} />
-                            <CapturedPieces color="w" pieces={capturedWhitePieces} scoreAdvantage={materialAdvantage.whiteAdvantage} pieceTheme={appSettings.pieceTheme} />
-                        </div>
-                    </div>
                     <div className="move-navigation-controls">
                         <button className="btn-icon" onClick={() => { soundManager.play('UI_CLICK'); handleFirstMove(); }} disabled={historyIndex < 0} aria-label="First move" title="Go to the first move"><FirstMoveIcon /></button>
                         <button className="btn-icon" onClick={() => { soundManager.play('UI_CLICK'); handlePrevMove(); }} disabled={historyIndex < 0} aria-label="Previous move" title="Go to previous move"><PrevMoveIcon /></button>
@@ -563,12 +452,20 @@ const SolveView = ({
                     </div>
 
                     <div className="solve-main-actions">
-                        <a className={`btn btn-analyze ${cooldown > 0 ? 'disabled' : ''}`} href={`https://www.chess.com/analysis?fen=${encodeURIComponent(game.fen())}&flip=${turn === 'b'}`} target="_blank" rel="noopener noreferrer" onClick={handleAnalysisClick}>Analysis with chess.com {cooldown > 0 ? `(${Math.floor(cooldown/60)}:${String(cooldown%60).padStart(2,'0')})` : ''}</a>
-                        <a className={`btn btn-dark ${cooldown > 0 ? 'disabled' : ''}`} href={`https://lichess.org/analysis/standard/${encodeURIComponent(game.fen())}`} target="_blank" rel="noopener noreferrer" onClick={handleAnalysisClick}>Analysis with Lichess.org {cooldown > 0 ? `(${Math.floor(cooldown/60)}:${String(cooldown%60).padStart(2,'0')})` : ''}</a>
                         <div className="result-actions">
-                            <button className="btn btn-secondary btn-back" onClick={() => { onBack(); }} title={backButtonTitle} aria-label={backButtonTitle}><BackIcon/> Back</button>
-                            <button className="btn btn-secondary" onClick={() => { onHome(); }} aria-label="Go to Home Screen" title="Return to the home screen">Home</button>
-                            <button className="btn btn-analyze" onClick={() => { onNextPuzzle(); }} title={nextButtonTitle}>{nextButtonText}</button>
+                            <button className="btn-icon" onClick={() => { onBack(); }} title={backButtonTitle} aria-label={backButtonTitle}>
+                                <BackIcon/>
+                            </button>
+                            <button className="btn-icon" onClick={() => { onHome(); }} aria-label="Go to Home Screen" title="Return to the home screen">
+                                <HomeIcon />
+                            </button>
+                            <button className="btn btn-secondary btn-analysis" onClick={handleAnalysisClickWithCooldown} disabled={cooldown > 0} title={cooldown > 0 ? `Analysis is on cooldown` : 'Open for analysis'}>
+                                <AdviceIcon />
+                                <span>{cooldown > 0 ? `Analysis (${Math.floor(cooldown/60)}:${String(cooldown%60).padStart(2,'0')})` : 'Analysis'}</span>
+                            </button>
+                            <button className="btn-icon btn-analyze" onClick={() => { onNextPuzzle(); }} title={nextButtonTitle} aria-label={nextButtonTitle}>
+                                <PlusIcon />
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -582,6 +479,26 @@ const SolveView = ({
                     history={mainLineHistory}
                     initialFen={initialFen}
                 />
+                 {isAnalysisModalOpen && createPortal(
+                    <div className="bookmark-modal-overlay" onClick={() => setIsAnalysisModalOpen(false)}>
+                        <div className="bookmark-modal" onClick={(e) => e.stopPropagation()}>
+                            <div className="bookmark-modal-header">
+                                <h3>External Analysis</h3>
+                                <button onClick={() => setIsAnalysisModalOpen(false)} className="close-btn"><CloseIcon /></button>
+                            </div>
+                            <div className="bookmark-form-group" style={{gap: '0.75rem'}}>
+                                <p style={{margin: 0, color: 'var(--text-muted-color)', fontSize: '0.9rem'}}>Analyze the current position on your favorite platform:</p>
+                                <a className="btn btn-analyze" href={`https://www.chess.com/analysis?fen=${encodeURIComponent(game.fen())}&flip=${turn === 'b'}`} target="_blank" rel="noopener noreferrer" onClick={() => setIsAnalysisModalOpen(false)}>
+                                    chess.com
+                                </a>
+                                <a className="btn btn-dark" href={`https://lichess.org/analysis/standard/${encodeURIComponent(game.fen())}`} target="_blank" rel="noopener noreferrer" onClick={() => setIsAnalysisModalOpen(false)}>
+                                    Lichess.org
+                                </a>
+                            </div>
+                        </div>
+                    </div>,
+                    document.body
+                )}
             </div>
         </div>
     );

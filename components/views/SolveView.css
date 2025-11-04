@@ -9,7 +9,7 @@
   position: relative;
   display: flex;
   justify-content: center;
-  align-items: center;
+  align-items: flex-start; /* Align board to the top */
   min-width: 0;
   min-height: 0;
   height: 100%;
@@ -18,20 +18,57 @@
   overflow: hidden;             /* prevent any child overflow */
 }
 
-.board-area .board-wrapper{
+/* New wrapper for the board and captured pieces bars */
+.board-and-captures-wrapper {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start; /* Align content to the top */
+  align-items: center;
   width: var(--board-size);
-  height: var(--board-size);
+  height: auto; /* Allow height to grow with content */
   max-width: 100%;
   max-height: 100%;
-  display: flex;
-  justify-content: center;
+}
+
+.board-and-captures-wrapper .captured-pieces {
+    width: 100%;
+    flex-shrink: 0;
+}
+
+/* A new flex container to hold both captured pieces components in a single row */
+.captured-pieces-row {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+}
+
+/* Let the container for black pieces (captured by white) shrink to its content. */
+.captured-pieces-row > .captured-pieces-b {
+    flex-grow: 0;
+    flex-shrink: 1;
+}
+
+/* Let the container for white pieces (captured by black) also shrink to its content. */
+.captured-pieces-row > .captured-pieces-w {
+    flex-grow: 0;
+    flex-shrink: 1;
+}
+
+
+/* New wrapper to ensure overlays (arrows, game over) are correctly positioned on the board */
+.board-wrapper-for-overlays {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1; /* Keep the board itself square */
+  flex-grow: 0; /* Don't grow, maintain aspect ratio */
+  display: flex; /* To center the chessboard-container within */
   align-items: center;
-  box-sizing: border-box;
-  overflow: hidden;
+  justify-content: center;
+  min-height: 0; /* Crucial for flex shrinking */
 }
 
 /* The chessboard element itself */
-.board-area .chessboard-container{
+.board-wrapper-for-overlays .chessboard-container{
   width: 100%;
   height: 100%;
   max-width: var(--board-size);
@@ -66,10 +103,6 @@
   margin: 0;
   padding: 0;
 }
-
-/* ====== HEADER, CARDS, ETC. ====== */
-.solve-view-header { padding: 0; margin: 0; min-height: auto; }
-.captured-pieces-stack { display: flex; flex-direction: column; gap: 0.5rem; }
 
 /* Overlay drawings on the board */
 .drawing-overlay{
@@ -117,22 +150,29 @@
   margin-top: auto; padding-top: 1rem; border-top: 1px solid var(--border-color);
   display: flex; flex-direction: column; gap: 0.75rem;
 }
-.solve-main-actions .btn-analyze,
-.solve-main-actions .btn-dark{ text-align: center; font-size: 0.9rem; padding: 0.6rem 1rem; width: 100%; }
+
 .solve-main-actions .result-actions {
     display: flex;
     gap: 0.75rem;
     width: 100%;
 }
-.solve-main-actions .result-actions .btn.btn-back {
-    flex: 0 0 auto;
+
+.solve-main-actions .result-actions > .btn-icon {
+    flex-shrink: 0;
 }
-.solve-main-actions .result-actions .btn-secondary:not(.btn-back) {
-    flex: 1 1 0;
+
+.solve-main-actions .result-actions .btn-analysis {
+    flex-grow: 1;
+    min-width: 0; /* Allow shrinking */
+    padding: 0 0.5rem; /* Reduced horizontal padding */
 }
-.solve-main-actions .result-actions .btn-analyze {
-    flex: 2 1 0;
+
+.solve-main-actions .result-actions .btn-analysis span {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
+
 
 /* ====== MOVE HISTORY CARD ====== */
 .move-history-wrapper{
@@ -191,7 +231,9 @@
 
 /* ====== SHARE MODAL ====== */
 .share-modal {
-    width: 400px;
+    width: 90vw;
+    max-width: 420px;
+    gap: 1rem;
 }
 
 .share-image-preview {
@@ -219,20 +261,20 @@
 }
 
 .share-button-group {
-    display: flex;
-    gap: 0.5rem;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 0.75rem;
 }
 
-.share-button-group .btn {
-    flex: 1;
+.share-modal .fen-input-wrapper input.fen-input {
+    word-break: break-all;
+    overflow-wrap: break-word;
 }
 
-@media(max-width: 420px) {
-    .bookmark-modal.share-modal {
-        width: 90vw;
-    }
+.share-modal .fen-input-wrapper textarea.fen-input {
+    word-break: break-all;
+    overflow-wrap: break-word;
 }
-
 
 /* ====== RESPONSIVE ====== */
 @media (max-width: 768px) and (orientation: landscape){

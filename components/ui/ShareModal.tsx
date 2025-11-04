@@ -46,10 +46,8 @@ export const ShareModal = ({ isOpen, onClose, chessInstance, history, initialFen
     
     const pgn = useMemo(() => {
         if (!isOpen) return '';
-        // Create a temporary game to set up the headers correctly and play through moves.
         const tempGame = new Chess(initialFen);
         history.forEach(move => {
-            // This might fail if a move is invalid (e.g., from an alternate line), but chess.js is robust.
             try {
                 tempGame.move({ from: move.from, to: move.to, promotion: move.promotion });
             } catch(e) { /* ignore invalid moves */ }
@@ -63,7 +61,6 @@ export const ShareModal = ({ isOpen, onClose, chessInstance, history, initialFen
             const svgUrl = generateBoardImageForSharing(fen);
             convertSvgToPngDataURL(svgUrl, 400, 400).then(setPngDataUrl).catch(console.error);
         } else {
-            // Reset on close
             setPngDataUrl('');
         }
     }, [isOpen, chessInstance]);
@@ -79,12 +76,10 @@ export const ShareModal = ({ isOpen, onClose, chessInstance, history, initialFen
     const handleCopyImage = async () => {
         if (!pngDataUrl) return;
         try {
-            // The Clipboard API for images requires a Blob.
             const response = await fetch(pngDataUrl);
             const blob = await response.blob();
-            await navigator.clipboard.write([
-                new ClipboardItem({ 'image/png': blob })
-            ]);
+            // @ts-ignore
+            await navigator.clipboard.write([ new ClipboardItem({ 'image/png': blob }) ]);
             setCopyState(prev => ({ ...prev, image: 'copied' }));
             setTimeout(() => setCopyState(prev => ({...prev, image: 'idle'})), 2000);
         } catch (err) {
@@ -97,52 +92,35 @@ export const ShareModal = ({ isOpen, onClose, chessInstance, history, initialFen
 
     return createPortal(
         <div className="bookmark-modal-overlay" onClick={onClose}>
-            <div className="bookmark-modal" style={{width: '400px'}} onClick={(e) => e.stopPropagation()}>
+            <div className="bookmark-modal share-modal" onClick={(e) => e.stopPropagation()}>
                 <div className="bookmark-modal-header">
                     <h3>Share Position</h3>
                     <button onClick={onClose} className="close-btn"><CloseIcon /></button>
                 </div>
-                
-                <div style={{ textAlign: 'center', marginBottom: '1rem' }}>
-                    {pngDataUrl ? (
-                         <img src={pngDataUrl} alt="Chess position preview" style={{ width: '200px', height: '200px', border: '1px solid var(--border-color)', borderRadius: '4px' }}/>
-                    ) : (
-                        <div style={{ width: '200px', height: '200px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div className="spinner"></div></div>
-                    )}
+                <div className="share-image-preview">
+                    {pngDataUrl ? <img src={pngDataUrl} alt="Chess position preview" /> : <div className="share-image-placeholder"><div className="spinner"></div></div>}
                 </div>
-                
                 <div className="bookmark-form-group">
                     <label>Export Image</label>
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
-                         <a href={pngDataUrl} download={`chess-position.png`} className="btn btn-secondary" style={{ flex: 1 }}>
-                            <DownloadIcon /> Download PNG
-                        </a>
-                        <button className="btn btn-secondary" onClick={handleCopyImage} style={{ flex: 1 }}>
-                            {copyState.image === 'copied' ? <CheckIcon/> : <CopyIcon />} Copy Image
-                        </button>
+                    <div className="share-button-group">
+                         <a href={pngDataUrl} download={`chess-position.png`} className="btn btn-secondary"><DownloadIcon /> Download PNG</a>
+                        <button className="btn btn-secondary" onClick={handleCopyImage}>{copyState.image === 'copied' ? <CheckIcon/> : <CopyIcon />} Copy Image</button>
                     </div>
                 </div>
-
                 <div className="bookmark-form-group">
                     <label htmlFor="fen-share">FEN</label>
                     <div className="fen-input-wrapper">
                         <input id="fen-share" type="text" value={chessInstance.fen()} readOnly className="fen-input" />
-                        <button className="btn-icon copy-fen-btn" onClick={() => handleCopy(chessInstance.fen(), 'fen')} title="Copy FEN">
-                            {copyState.fen === 'copied' ? <CheckIcon /> : <CopyIcon />}
-                        </button>
+                        <button className="btn-icon copy-fen-btn" onClick={() => handleCopy(chessInstance.fen(), 'fen')} title="Copy FEN">{copyState.fen === 'copied' ? <CheckIcon /> : <CopyIcon />}</button>
                     </div>
                 </div>
-
                 <div className="bookmark-form-group">
-                    <label htmlFor="pgn-share">PGN</label>
+                    <label htmlFor="pgn-share">PGN (Main Line)</label>
                     <div className="fen-input-wrapper">
                         <textarea id="pgn-share" value={pgn} readOnly className="fen-input" rows={2}></textarea>
-                        <button className="btn-icon copy-fen-btn" onClick={() => handleCopy(pgn, 'pgn')} title="Copy PGN">
-                            {copyState.pgn === 'copied' ? <CheckIcon /> : <CopyIcon />}
-                        </button>
+                        <button className="btn-icon copy-fen-btn" onClick={() => handleCopy(pgn, 'pgn')} title="Copy PGN">{copyState.pgn === 'copied' ? <CheckIcon /> : <CopyIcon />}</button>
                     </div>
                 </div>
-
                  <div className="bookmark-modal-actions">
                     <button className="btn btn-primary" onClick={onClose}>Done</button>
                 </div>

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'scan-to-chess-v3';
+const CACHE_NAME = 'scan-to-chess-v4';
 // Add all local assets and key CDN assets to the cache
 const urlsToCache = [
   '/',
@@ -38,8 +38,8 @@ const urlsToCache = [
   'https://apis.google.com/js/api.js',
   'https://aistudiocdn.com/react-dom@^19.1.1',
   'https://aistudiocdn.com/react@^19.1.1',
-  'https://aistudiocdn.com/pdfjs-dist@5.4.149/build/pdf.worker.mjs',
-  'https://aistudiocdn.com/pdfjs-dist@5.4.149/build/pdf.mjs',
+  'https://aistudiocdn.com/pdfjs-dist@4.10.38/build/pdf.worker.mjs',
+  'https://aistudiocdn.com/pdfjs-dist@4.10.38/build/pdf.mjs',
   'https://aistudiocdn.com/chess.js@^1.4.0',
   'https://aistudiocdn.com/react-image-crop@^11.0.10',
   // Client-side pipeline dependencies

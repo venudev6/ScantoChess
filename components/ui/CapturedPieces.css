@@ -6,11 +6,10 @@
 
 /* Captured Pieces: Displays pieces captured during a game. */
 .captured-pieces {
-  background: var(--border-color);
+  background: transparent;
   color: var(--text-color);
   padding: 0.5rem 0.75rem;
-  border-radius: 0.5rem;
-  border: 1px solid var(--dashed-border-color);
+  border: none;
   display: flex;
   flex-direction: row; /* Horizontal layout */
   align-items: center; /* Center items vertically */
@@ -19,11 +18,11 @@
 }
 /* Special styling for the component showing white pieces captured by black */
 .captured-pieces.captured-pieces-w {
-    background-color: #696969; /* Darker background for contrast */
-    color: #ffffff;
+    background-color: transparent;
+    color: var(--text-color);
 }
 .captured-pieces.captured-pieces-w .no-pieces {
-    color: #d1d5db;
+    color: var(--text-muted-color);
 }
 
 /* Header for score advantage is removed. */
@@ -33,8 +32,6 @@
   font-weight: 700;
   color: var(--success-color);
   font-size: 1.1rem;
-  margin-left: auto; /* Pushes the score to the far right */
-  padding-left: 0.5rem; /* Space between pieces and score */
   flex-shrink: 0;
 }
 .captured-pieces-display {
@@ -45,7 +42,6 @@
   overflow-y: hidden;
   overflow-x: auto; /* Enable horizontal scrolling if pieces overflow */
   align-items: center;
-  flex-grow: 1; /* Allow container to fill available space */
   min-width: 0; /* Fix for flexbox overflow */
 }
 /* Custom scrollbar for captured pieces display */
@@ -76,6 +72,31 @@
     font-style: italic; /* Differentiate placeholder text */
     white-space: nowrap; /* Prevent placeholder from wrapping */
 }
+
+/* Styles for pieces displayed inline with the board */
+.captured-pieces.display-mode-inline {
+    height: 36px;
+    padding: 0;
+    gap: 0.5rem;
+}
+/* White pieces captured by Black appear above the board, right-aligned */
+.captured-pieces.display-mode-inline.captured-pieces-w .captured-pieces-display {
+    justify-content: flex-start; /* flex-start on a reversed row is the right edge */
+    flex-direction: row-reverse;
+}
+/* Black pieces captured by White appear below the board, left-aligned */
+.captured-pieces.display-mode-inline.captured-pieces-b .captured-pieces-display {
+    justify-content: flex-start;
+}
+.captured-pieces.display-mode-inline .piece {
+    width: 28px;
+    height: 28px;
+}
+.captured-pieces.display-mode-inline .advantage {
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
 
 @media (max-width: 768px) {
     .captured-pieces {

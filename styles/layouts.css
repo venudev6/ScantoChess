@@ -17,7 +17,7 @@
     /* Layout variables for consistency */
     --left-col: 240px;
     --right-col: 320px;
-    --gap: 24px;
+    --gap: 12px;
     --padding: 24px;
     --vh: 100vh; /* Fallback for older browsers */
     --vh: 100svh; /* Use small viewport height to account for mobile browser UI */

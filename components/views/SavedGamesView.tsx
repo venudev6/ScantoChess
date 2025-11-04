@@ -124,8 +124,8 @@ const SavedGamesView = ({ onGameSelect, onBack }: SavedGamesViewProps) => {
         <div className="card admin-panel">
             <div className="admin-header">
                 <div className="folder-header">
-                    <button className="btn btn-secondary" onClick={handleBackClick} title="Go back" aria-label="Go back">
-                        <BackIcon /> Back
+                    <button className="btn-icon" onClick={handleBackClick} title="Go back" aria-label="Go back">
+                        <BackIcon />
                     </button>
                     <h1>{selectedFolder ? `Saved Games > ${selectedFolder}` : 'Saved Games'}</h1>
                 </div>

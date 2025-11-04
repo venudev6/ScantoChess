@@ -36,10 +36,10 @@ const AdminView = ({ onBack }: AdminViewProps) => {
     return (
         <div className="card admin-panel">
             <div className="admin-header">
-                <h1>Admin Panel - Registered Users</h1>
-                <button className="btn btn-secondary" onClick={onBack} aria-label="Back to App">
-                    <BackIcon /> 
+                <button className="btn-icon" onClick={onBack} title="Back to App" aria-label="Back to App">
+                    <BackIcon />
                 </button>
+                <h1>Admin Panel - Registered Users</h1>
             </div>
 
             {isLoading ? (

@@ -6,7 +6,7 @@ import React, { useState, useEffect } from 'react';
 
 // Import global and shared stylesheets
 import './styles/global.css';
-import './styles/components.css';
+import './components/ui/components.css';
 import './styles/layouts.css';
 
 // Import authentication components

@@ -3,65 +3,100 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
-/* Image Preview & Crop Tool: For cropping the image before analysis. */
-.image-preview-container {
+/* Styles for the new Image Deep Scan view */
+.image-scan-container {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 1.5rem;
+  width: 100%;
+  height: 100%;
 }
-.image-preview {
-  max-width: 100%;
-  max-height: 60vh;
+
+.image-scan-header {
+  width: 100%;
+  display: flex;
+  justify-content: flex-start;
+}
+
+.image-scan-content-wrapper {
+  position: relative;
+  width: 100%;
+  max-width: 80vh; /* Constrains height via aspect-ratio */
+  margin: auto; /* Centers the block vertically and horizontally in its flex parent */
+  
+  /* New styles for background image */
+  background-size: 100% 100%; /* Fill the container which has the correct aspect ratio */
+  background-position: center;
+  background-repeat: no-repeat;
   border-radius: 0.5rem;
-  border: 1px solid var(--border-color);
-  display: block;
-}
-.ReactCrop {
-    max-height: 60vh;
-}
-.preview-controls {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 1.5rem;
-    width: 100%;
-}
-.preview-button-group {
-    display: flex;
-    gap: 1rem;
-    justify-content: space-between;
-    align-items: center;
-    width: 100%;
-    max-width: 400px;
-}
-.preview-button-group .btn-primary {
-    flex-grow: 1;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
 }
 
+.scan-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(2px);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 1rem;
+  text-align: center;
+  color: var(--text-color);
+  border-radius: 0.5rem;
+}
 
-/* React Crop Overrides for better visibility and smoother movement */
-.ReactCrop__crop-selection {
-  border: 3px solid var(--primary-color) !important;
-  box-shadow: 0 0 0 9999em rgba(0, 0, 0, 0.5); /* Dim the area outside the crop */
-  /* Promoting to its own composite layer for smoother transforms. */
-  will-change: transform;
-  backface-visibility: hidden;
+.scan-overlay .spinner {
+  width: 40px;
+  height: 40px;
+  border-width: 4px;
 }
-.ReactCrop__drag-handle {
-    background-color: rgba(255, 255, 255, 0.8);
-    border: 1px solid var(--primary-hover);
-    width: 12px;
-    height: 12px;
-    box-shadow: 0 0 8px rgba(0,0,0,0.4);
-    border-radius: 50%;
+
+.scan-overlay progress {
+  width: 80%;
+  max-width: 250px;
 }
-/* Larger touch targets for handles for easier use on mobile */
-.ReactCrop__drag-handle::after {
-    content: '';
-    position: absolute;
-    left: -12px;
-    top: -12px;
-    right: -12px;
-    bottom: -12px;
+
+/* puzzle overlay styles copied from PdfView.css */
+.puzzle-overlay {
+  position: absolute;
+  z-index: 10;
+  cursor: pointer;
+  border: none;
+  background-color: transparent;
+  transition: background-color 0.2s ease;
 }
+
+.puzzle-overlay::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 5%;
+  right: 5%;
+  height: 2px;
+  background-color: rgba(211, 45, 39, 0.7);
+  transform: translateY(-50%);
+  transition: background-color 0.2s ease;
+}
+
+.corner-marker {
+  position: absolute;
+  width: 15px;
+  height: 15px;
+  border-color: rgba(211, 45, 39, 0.7);
+  border-style: solid;
+  transition: border-color 0.2s ease;
+}
+
+.corner-marker.top-left { top: 0; left: 0; border-width: 3px 0 0 3px; }
+.corner-marker.top-right { top: 0; right: 0; border-width: 3px 3px 0 0; }
+.corner-marker.bottom-left { bottom: 0; left: 0; border-width: 0 0 3px 3px; }
+.corner-marker.bottom-right { bottom: 0; right: 0; border-width: 0 3px 3px 0; }
+
+.puzzle-overlay:hover { background-color: rgba(211, 45, 39, 0.1); }
+.puzzle-overlay:hover .corner-marker { border-color: #D32D27; }
+.puzzle-overlay:hover::after { background-color: #D32D27; }

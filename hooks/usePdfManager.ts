@@ -3,21 +3,16 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 import { useState, useCallback, useRef, useEffect } from 'react';
-import * as pdfjsLib from "pdfjs-dist/build/pdf.mjs";
 import { db } from '../lib/db';
-import { generatePdfThumbnail, dataUrlToFile } from '../lib/utils';
+import { generatePdfThumbnail } from '../lib/utils';
 import type { AppState, StoredPdf, User } from '../lib/types';
 import { authService } from '../lib/authService';
-
-// Set up the web worker for pdf.js to avoid blocking the main thread.
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://aistudiocdn.com/pdfjs-dist@5.4.149/build/pdf.worker.mjs`;
 
 type SelectedPdfState = {
     id: number;
     file: File;
     lastPage: number;
     lastZoom: number;
-    doc: pdfjsLib.PDFDocumentProxy; // The parsed PDF.js document object.
 };
 
 type UsePdfManagerProps = {
@@ -29,21 +24,12 @@ type UsePdfManagerProps = {
 /**
  * A custom hook to manage all interactions with the IndexedDB for storing and retrieving PDFs.
  * It centralizes the state and logic for the list of stored PDFs, the currently selected PDF,
- * and loading indicators. It now caches the parsed PDF document object for performance.
+ * and loading indicators.
  */
 export const usePdfManager = ({ setAppState, setError, user }: UsePdfManagerProps) => {
     const [storedPdfs, setStoredPdfs] = useState<StoredPdf[]>([]);
     const [isProcessingPdf, setIsProcessingPdf] = useState(false);
     const [selectedPdf, setSelectedPdf] = useState<SelectedPdfState | null>(null);
-    const docCache = useRef(new Map<number, pdfjsLib.PDFDocumentProxy>());
-
-    // This effect cleans up all cached PDF documents when the hook is unmounted.
-    useEffect(() => {
-        return () => {
-            docCache.current.forEach(doc => doc.destroy());
-            docCache.current.clear();
-        };
-    }, []);
 
     const loadStoredPdfs = useCallback(async () => {
         try {
@@ -55,14 +41,12 @@ export const usePdfManager = ({ setAppState, setError, user }: UsePdfManagerProp
         }
     }, []);
     
-    // On initial mount, just load any existing PDFs from the database.
     useEffect(() => {
         loadStoredPdfs();
     }, [loadStoredPdfs]);
 
 
     const clearSelectedPdf = useCallback(() => {
-        // Don't destroy the doc here, as it's cached.
         setSelectedPdf(null);
     }, []);
 
@@ -70,16 +54,11 @@ export const usePdfManager = ({ setAppState, setError, user }: UsePdfManagerProp
         setIsProcessingPdf(true);
         try {
             const thumbnail = await generatePdfThumbnail(file);
-            const arrayBuffer = await file.arrayBuffer();
-            const doc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
             const newId = await db.savePdf(file, thumbnail);
             
             await loadStoredPdfs();
 
-            // Cache the newly loaded document
-            docCache.current.set(newId, doc);
-
-            setSelectedPdf({ id: newId, file, lastPage: 1, lastZoom: 1.0, doc });
+            setSelectedPdf({ id: newId, file, lastPage: 1, lastZoom: 1.0 });
             setAppState('pdfViewer');
             return newId;
         } catch (e) {
@@ -94,27 +73,14 @@ export const usePdfManager = ({ setAppState, setError, user }: UsePdfManagerProp
     const handleStoredPdfSelect = async (id: number) => {
         setIsProcessingPdf(true);
         try {
-            let doc: pdfjsLib.PDFDocumentProxy;
             const record = await db.getPdf(id);
-            
             const pageToOpen = record.lastPage || 1;
-
-
-            // Check the cache first to improve loading times for recent PDFs
-            if (docCache.current.has(id)) {
-                doc = docCache.current.get(id)!;
-            } else {
-                const arrayBuffer = await record.data.arrayBuffer();
-                doc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-                docCache.current.set(id, doc); // Add to cache
-            }
 
             setSelectedPdf({
                 id: record.id,
                 file: record.data,
                 lastPage: pageToOpen,
                 lastZoom: record.lastZoom || 1.0,
-                doc,
             });
             setAppState('pdfViewer');
         } catch (e) {
@@ -128,11 +94,6 @@ export const usePdfManager = ({ setAppState, setError, user }: UsePdfManagerProp
     
     const handleDeletePdf = async (id: number) => {
         try {
-            // If the document is in the cache, destroy it and remove it
-            if (docCache.current.has(id)) {
-                docCache.current.get(id)?.destroy();
-                docCache.current.delete(id);
-            }
             await db.deletePdf(id);
             await loadStoredPdfs();
         } catch(e) {

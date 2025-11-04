@@ -4,7 +4,46 @@
 */
 import { Chess } from 'chess.js';
 import { completeFen } from "./fenUtils";
-import type { PieceColor, AnalysisDetails, BoundingBox } from "./types";
+import type { PieceColor, AnalysisDetails } from "./types";
+
+/**
+ * MOCK FUNCTION: Analyzes an image of the board's margins for turn markers (squares, triangles, etc.).
+ * This simulates sending the image to a second backend server (Server 2) running a YOLOv8 neural network.
+ * @param marginImage The image file of the area containing potential turn markers.
+ * @returns A promise that resolves with the detected turn ('w' or 'b') or null if no marker is found.
+ */
+export const analyzeTurnMarker = async (
+    marginImage: File
+): Promise<{ turn: PieceColor | null }> => {
+    console.debug("--- Server 2 (Mock) Turn Marker Analysis Started ---");
+    // Simulate network delay for the neural network server.
+    await new Promise(res => setTimeout(res, Math.random() * 800 + 400));
+    
+    // In a real implementation, you would send the `marginImage` to your
+    // YOLOv8 server endpoint and parse its JSON response.
+    
+    // For this mock, we'll simulate a random response from the server based on the provided YAML file.
+    const possibleDetections = ['black_triangle', 'white_triangle', 'black_square', 'white_square', null, null, null]; // Add nulls to reduce detection chance
+    const detection = possibleDetections[Math.floor(Math.random() * possibleDetections.length)];
+
+    if (!detection) {
+        console.debug("--- Server 2 (Mock) Analysis Finished: No turn marker found. ---");
+        return { turn: null };
+    }
+
+    // Parse the simulated output
+    if (detection.startsWith('black')) {
+        console.debug(`--- Server 2 (Mock) Analysis Finished: Detected a '${detection}' marker for Black's turn. ---`);
+        return { turn: 'b' };
+    } else if (detection.startsWith('white')) {
+        console.debug(`--- Server 2 (Mock) Analysis Finished: Detected a '${detection}' marker for White's turn. ---`);
+        return { turn: 'w' };
+    }
+    
+    console.debug("--- Server 2 (Mock) Analysis Finished: Detection was inconclusive. ---");
+    return { turn: null };
+};
+
 
 /**
  * Analyzes a chess position by sending the image to a backend server.
@@ -73,20 +112,14 @@ export const analyzeImagePosition = async (
         
         console.debug("--- Server Analysis Pipeline Finished ---");
         
-        // This is the key change.
-        // We construct the details object by merging data from multiple potential sources in the server response.
-        // This ensures that even if `data.details` is present, we still correctly add `warpedImageDataUrl` if `data.warped_image_b64` exists.
         const details: AnalysisDetails = {
-            // Start with any existing details object from the server to not lose data.
             ...(data.details || {}),
-            // Then, explicitly override or add properties from the top level of the response for robustness.
             confidence: data.confidence ?? data.details?.confidence ?? null,
             reasoning: data.reasoning ?? data.details?.reasoning ?? "Position analyzed by backend server.",
             uncertainSquares: data.uncertain_squares ?? data.details?.uncertainSquares ?? [],
             postProcess: data.post_process ?? data.details?.postProcess,
             individualScans: data.individual_scans ?? data.details?.individualScans,
             meta: data.meta ?? data.details?.meta,
-            // Prefer the top-level b64 image, but fall back to one inside details if it exists.
             warpedImageDataUrl: data.warped_image_b64 ? `data:image/png;base64,${data.warped_image_b64}` : (data.details?.warpedImageDataUrl || undefined),
             failureReason: data.failure_reason ?? data.details?.failureReason,
         };
@@ -103,22 +136,4 @@ export const analyzeImagePosition = async (
         console.error("Server analysis pipeline failed:", error);
         throw error; // Re-throw to be caught by the calling component (ProtectedApp.tsx)
     }
-};
-
-/**
- * MOCK IMPLEMENTATION - This function is a placeholder.
- * The original client-side board detection was moved to a backend service,
- * but the endpoint for multi-board detection is not specified.
- * This will currently return no boards.
- * @param imageBase64 The base64 encoded image of a page.
- * @returns A promise that resolves with an array of detected bounding boxes.
- */
-export const findChessboardsInPage = async (imageBase64: string): Promise<BoundingBox[]> => {
-    console.warn('findChessboardsInPage is a mock implementation and will not find any boards.');
-    // In a real implementation, this would make a fetch call to a backend endpoint like:
-    // const response = await fetch('/api/detect-boards', { ... });
-    // const data = await response.json();
-    // return data.boundingBoxes;
-    await new Promise(resolve => setTimeout(resolve, 500)); // Simulate network delay
-    return [];
 };

@@ -111,17 +111,18 @@
     border-top: 1px solid var(--border-color);
     background: transparent;
     box-shadow: none;
-    border-left: none;
-    border-right: none;
-    border-bottom: none;
     border-radius: 0;
     flex-direction: row;
     gap: 1rem;
-    align-items: flex-end; /* Align to the bottom */
+    align-items: stretch; /* Ensure buttons have same height */
 }
-.result-actions.control-section .btn { flex-basis: 0; }
-.result-actions.control-section .btn-back { flex-grow: 0; }
-.result-actions.control-section .btn-primary { flex-grow: 2; }
+.result-actions.control-section .btn-icon {
+    flex-grow: 0;
+    flex-shrink: 0;
+}
+.result-actions.control-section .btn-primary {
+    flex-grow: 1;
+}
 
 
 .chess-turn-toggle {

@@ -107,7 +107,7 @@ const CameraView = ({ onCapture, onBack }: {
                 <video ref={videoRef} autoPlay playsInline muted />
             </div>
             <div className="camera-controls">
-                <button className="btn btn-secondary" onClick={onBack} title="Go back" aria-label="Go back"><BackIcon /> Back</button>
+                <button className="btn-icon" onClick={onBack} title="Go back" aria-label="Go back"><BackIcon /></button>
                 <button className="capture-btn" onClick={handleCapture} aria-label="Take picture" title="Capture image"></button>
             </div>
         </div>

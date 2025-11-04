@@ -25,6 +25,7 @@ interface UserPanelProps {
     appSettings: AppSettings;
     scanDuration: number | null;
     clientProcessingTime: number | null;
+    serverProcessingTime: number | null;
     analysisDetails: AnalysisDetails | null;
     debugLog?: string[];
     bestMove?: string | null;
@@ -35,7 +36,7 @@ interface UserPanelProps {
     turn?: 'w' | 'b';
 }
 
-const UserPanel = ({ user, isLoggedIn, onLogout, onAdminPanelClick, onSavedGamesClick, onHistoryClick, onProfileClick, onLoginClick, appSettings, scanDuration, clientProcessingTime, analysisDetails, debugLog, bestMove, displayMode, isEngineReady, isThinking, playerSide, turn }: UserPanelProps) => {
+const UserPanel = ({ user, isLoggedIn, onLogout, onAdminPanelClick, onSavedGamesClick, onHistoryClick, onProfileClick, onLoginClick, appSettings, scanDuration, clientProcessingTime, serverProcessingTime, analysisDetails, debugLog, bestMove, displayMode, isEngineReady, isThinking, playerSide, turn }: UserPanelProps) => {
     const [openSection, setOpenSection] = useState<OpenSection>(null);
     const [isPieceSetModalOpen, setIsPieceSetModalOpen] = useState(false);
     const debugLogRef = useRef<HTMLDivElement>(null);
@@ -45,13 +46,13 @@ const UserPanel = ({ user, isLoggedIn, onLogout, onAdminPanelClick, onSavedGames
     };
 
     // The calculation logic
-    const networkAndServerTime = useMemo(() => {
-        if (scanDuration === null || clientProcessingTime === null) return null;
-        // scanDuration is in seconds, clientProcessingTime is in ms
+    const networkTime = useMemo(() => {
+        if (scanDuration === null || clientProcessingTime === null || serverProcessingTime === null) return null;
+        // scanDuration is in seconds, clientProcessingTime and serverProcessingTime are in ms
         const totalMs = scanDuration * 1000;
-        const result = (totalMs - clientProcessingTime);
+        const result = totalMs - clientProcessingTime - serverProcessingTime;
         return result > 0 ? result / 1000 : 0;
-    }, [scanDuration, clientProcessingTime]);
+    }, [scanDuration, clientProcessingTime, serverProcessingTime]);
 
 
     // Effect to auto-scroll the debug log
@@ -129,10 +130,16 @@ const UserPanel = ({ user, isLoggedIn, onLogout, onAdminPanelClick, onSavedGames
                                         <strong>{(clientProcessingTime / 1000).toFixed(2)}s</strong>
                                     </div>
                                 )}
-                                {networkAndServerTime !== null && networkAndServerTime > 0 && (
+                                {serverProcessingTime !== null && serverProcessingTime > 0 && (
                                     <div className="scan-stat">
-                                        <span>Network + Server</span>
-                                        <strong>{networkAndServerTime.toFixed(2)}s</strong>
+                                        <span>Server Processing</span>
+                                        <strong>{(serverProcessingTime / 1000).toFixed(2)}s</strong>
+                                    </div>
+                                )}
+                                {networkTime !== null && networkTime > 0 && (
+                                    <div className="scan-stat">
+                                        <span>Network Latency</span>
+                                        <strong>{networkTime.toFixed(2)}s</strong>
                                     </div>
                                 )}
                                 {analysisDetails && analysisDetails.confidence !== null && (

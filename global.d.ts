@@ -5,5 +5,13 @@
 
 // This file contains global TypeScript declarations for libraries loaded via <script> tags.
 
+declare global {
+    interface Window {
+        cv: any;
+        cvReady: Promise<void>;
+        onOpenCvReady: () => void;
+    }
+}
+
 // This export is needed to make this file a module.
 export {};

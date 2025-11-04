@@ -7,10 +7,10 @@
 import * as pdfjsLib from "pdfjs-dist/build/pdf.mjs";
 import { fenToBoardState } from './fenUtils';
 import { UNICODE_PIECES } from './chessConstants';
-import type { PieceColor, HistoryEntry } from './types';
+import type { PieceColor, HistoryEntry, BoundingBox } from './types';
+import { analyzeTurnMarker } from './gemini';
 
-
-// Declare cv and cvReady on the window object for global access to OpenCV.js
+// Keep the same global declarations used elsewhere.
 declare global {
     interface Window {
         cv: any;
@@ -19,15 +19,24 @@ declare global {
     }
 }
 
-// Tesseract is loaded from a script tag, so it will be on the window object.
 declare const Tesseract: any;
 
-
 /**
- * Converts an image file to a base64 encoded string, including the data URL prefix.
- * @param file The file to convert.
- * @returns A promise that resolves with the full data URL string (e.g., "data:image/png;base64,...").
+ * Expands a bounding box by a given percentage in all directions, clamping to the 0-1 range.
+ * @param box The original bounding box with x, y, width, height as percentages (0-1).
+ * @param percent The percentage to expand by (e.g., 0.01 for 1%).
+ * @returns The new, expanded bounding box.
  */
+export const expandBox = (box: BoundingBox, percent: number): BoundingBox => {
+    const newX = Math.max(0, box.x - percent);
+    const newY = Math.max(0, box.y - percent);
+    const newWidth = Math.min(1 - newX, box.width + (percent * 2));
+    const newHeight = Math.min(1 - newY, box.height + (percent * 2));
+    return { x: newX, y: newY, width: newWidth, height: newHeight };
+};
+
+/* ---------- helper functions (unchanged) ---------- */
+
 export const fileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -59,20 +68,11 @@ export const fileToImage = (file: File): Promise<HTMLImageElement> => {
     });
 };
 
-
-/**
- * Converts an image file to a base64 encoded string.
- * This is necessary for embedding the image data directly into the Gemini API request.
- * @param file The image file to convert (e.g., from an <input type="file"> or a Blob).
- * @returns A promise that resolves with the base64 string (without the "data:image/..." prefix).
- */
 export const imageToBase64 = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
       if (typeof reader.result === 'string') {
-        // The result is a data URL like "data:image/png;base64,iVBORw0KGgo...".
-        // We only need the part after the comma for the API.
         const base64 = reader.result.split(',')[1];
         if (base64) {
           resolve(base64);
@@ -88,12 +88,6 @@ export const imageToBase64 = (file: File): Promise<string> => {
   });
 };
 
-/**
- * Resizes an image on a canvas to a maximum dimension, then exports it as a File object.
- * @param canvas The source canvas with the cropped image.
- * @param options Configuration for resizing and export.
- * @returns A promise that resolves with the new, optimized File object.
- */
 export const resizeAndExportImage = (
     canvas: HTMLCanvasElement,
     options: {
@@ -110,7 +104,6 @@ export const resizeAndExportImage = (
         let targetWidth = originalWidth;
         let targetHeight = originalHeight;
 
-        // Calculate new dimensions while maintaining aspect ratio
         if (targetWidth > maxDimension || targetHeight > maxDimension) {
             if (targetWidth > targetHeight) {
                 targetHeight = Math.round((targetHeight / targetWidth) * maxDimension);
@@ -131,7 +124,6 @@ export const resizeAndExportImage = (
             return;
         }
 
-        // Draw the original canvas onto the resizing canvas
         ctx.drawImage(canvas, 0, 0, originalWidth, originalHeight, 0, 0, targetWidth, targetHeight);
 
         resizeCanvas.toBlob(
@@ -148,343 +140,76 @@ export const resizeAndExportImage = (
     });
 };
 
-
-/**
- * Converts a data URL (e.g., from a canvas or FileReader) into a Blob object.
- * This implementation uses the modern `fetch` API, which correctly handles
- * different encodings and is more robust than manual base64 decoding.
- * @param dataUrl The data URL string.
- * @returns A promise that resolves with the corresponding Blob.
- */
 export const dataUrlToBlob = async (dataUrl: string): Promise<Blob> => {
-    try {
-        const response = await fetch(dataUrl);
-        if (!response.ok) {
-            throw new Error(`Failed to fetch data URL: ${response.statusText}`);
+    return new Promise((resolve, reject) => {
+        try {
+            const parts = dataUrl.split(',');
+            if (parts.length !== 2) {
+                throw new Error('Invalid data URL format');
+            }
+            const meta = parts[0];
+            const base64Data = parts[1];
+
+            const mimeMatch = meta.match(/:(.*?);/);
+            if (!mimeMatch || mimeMatch.length < 2) {
+                throw new Error('Could not parse MIME type');
+            }
+            const mimeType = mimeMatch[1];
+            
+            const binaryString = atob(base64Data);
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+
+            resolve(new Blob([bytes], { type: mimeType }));
+        } catch (e) {
+            console.error("Failed to convert data URL to blob", e);
+            reject(new Error("Failed to convert data URL to blob."));
         }
-        return await response.blob();
-    } catch (e) {
-        console.error("Failed to convert data URL to blob", e);
-        throw new Error("Failed to convert data URL to blob.");
-    }
+    });
 };
 
-/**
- * Converts a data URL into a File object.
- * @param dataUrl The data URL string.
- * @param fileName The desired filename for the resulting File.
- * @returns A promise that resolves with the corresponding File object.
- */
 export const dataUrlToFile = async (dataUrl: string, fileName: string): Promise<File> => {
     const blob = await dataUrlToBlob(dataUrl);
     return new File([blob], fileName, { type: blob.type });
 };
 
-
-/**
- * Slices a warped chessboard image into 64 tiles using OpenCV.js. It performs
- * pre-processing to filter out empty tiles, resize piece tiles, and convert
- * them to an efficient format before they are sent to the Gemini API.
- * @param imageFile The warped image file of a chessboard.
- * @returns A promise resolving to an array of 64 objects, each containing the
- *          square name and either a WebP data URL or the string 'empty'.
- */
-export const sliceImageToTiles = async (imageFile: File): Promise<{ square: string, dataUrl: string | 'empty' }[]> => {
-    await window.cvReady;
-    const cv = window.cv;
-    const matsToClean: any[] = [];
-
-    try {
-        const img = new Image();
-        const objectUrl = URL.createObjectURL(imageFile);
-        img.src = objectUrl;
-        await new Promise<void>((resolve, reject) => {
-            img.onload = () => resolve();
-            img.onerror = reject;
-        });
-        URL.revokeObjectURL(objectUrl);
-
-        const srcMat = cv.imread(img);
-        matsToClean.push(srcMat);
-
-        // For best results, resize to a consistent, moderately high resolution for slicing.
-        const size = 512;
-        const resizedMat = new cv.Mat();
-        matsToClean.push(resizedMat);
-        cv.resize(srcMat, resizedMat, new cv.Size(size, size), 0, 0, cv.INTER_AREA);
-
-        const tiles: { square: string, dataUrl: string | 'empty' }[] = [];
-        const tileSize = size / 8;
-        const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
-        const ranks = ['8', '7', '6', '5', '4', '3', '2', '1'];
-        
-        // This canvas is reused for all final 64x64 tiles.
-        const tileCanvas = document.createElement('canvas');
-        tileCanvas.width = 64; // Target size for Gemini
-        tileCanvas.height = 64;
-
-        for (let r = 0; r < 8; r++) {
-            for (let c = 0; c < 8; c++) {
-                const square = files[c] + ranks[r];
-                const rect = new cv.Rect(c * tileSize, r * tileSize, tileSize, tileSize);
-                const tileMat = resizedMat.roi(rect);
-                matsToClean.push(tileMat);
-
-                // --- Empty Tile Check using Standard Deviation ---
-                const grayTile = new cv.Mat();
-                matsToClean.push(grayTile);
-                cv.cvtColor(tileMat, grayTile, cv.COLOR_RGBA2GRAY, 0);
-                
-                const mean = new cv.Mat();
-                const stdDev = new cv.Mat();
-                matsToClean.push(mean, stdDev);
-                cv.meanStdDev(grayTile, mean, stdDev);
-                
-                const stdDevValue = stdDev.data64F[0];
-                // This threshold determines if a tile is empty. A lower value is more
-                // sensitive and less likely to classify a low-contrast piece as empty.
-                const varianceThreshold = 36;
-                const stdDevThreshold = Math.sqrt(varianceThreshold); // = 6
-
-                if (stdDevValue < stdDevThreshold) {
-                    tiles.push({ square, dataUrl: 'empty' });
-                } else {
-                    // --- Resize to 64x64 and Convert to WebP ---
-                    const finalTileMat = new cv.Mat();
-                    matsToClean.push(finalTileMat);
-                    cv.resize(tileMat, finalTileMat, new cv.Size(64, 64), 0, 0, cv.INTER_AREA);
-                    
-                    cv.imshow(tileCanvas, finalTileMat);
-                    const dataUrl = tileCanvas.toDataURL('image/webp', 0.8);
-                    tiles.push({ square, dataUrl });
-                }
-            }
-        }
-        return tiles;
-    } finally {
-        // Clean up all allocated OpenCV memory.
-        matsToClean.forEach(mat => {
-            if (mat && !mat.isDeleted()) {
-                mat.delete();
-            }
-        });
-    }
-};
-
-/**
- * Slices a warped chessboard image into 64 individual canvases for classification.
- * It also identifies and separates tiles that are likely empty based on color variance.
- * @param imageFile The warped image file of the chessboard (should be square).
- * @returns A promise resolving to an object with two arrays: one for canvases of tiles with pieces,
- *          and one for information about empty tiles.
- */
-export const sliceImageToCanvases = async (
-    imageFile: File
-): Promise<{ 
-    canvases: { square: string; canvas: HTMLCanvasElement }[],
-    emptyTilesInfo: { square: string; piece: 'empty'; confidence: number }[]
-}> => {
-    await window.cvReady;
-    const cv = window.cv;
-    const matsToClean: any[] = [];
-
-    try {
-        const img = await fileToImage(imageFile);
-
-        const srcMat = cv.imread(img);
-        matsToClean.push(srcMat);
-
-        // For best results, resize to a consistent, moderately high resolution for slicing.
-        const size = 512;
-        const resizedMat = new cv.Mat();
-        matsToClean.push(resizedMat);
-        cv.resize(srcMat, resizedMat, new cv.Size(size, size), 0, 0, cv.INTER_AREA);
-
-        const canvases: { square: string; canvas: HTMLCanvasElement }[] = [];
-        const emptyTilesInfo: { square: string; piece: 'empty'; confidence: number }[] = [];
-        const tileSize = size / 8;
-        const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
-        const ranks = ['8', '7', '6', '5', '4', '3', '2', '1'];
-        
-        const targetTileSize = 96; // Size expected by the TF.js model
-
-        for (let r = 0; r < 8; r++) {
-            for (let c = 0; c < 8; c++) {
-                const square = files[c] + ranks[r];
-                const rect = new cv.Rect(c * tileSize, r * tileSize, tileSize, tileSize);
-                const tileMat = resizedMat.roi(rect);
-                matsToClean.push(tileMat);
-
-                // --- Empty Tile Check using Standard Deviation ---
-                const grayTile = new cv.Mat();
-                matsToClean.push(grayTile);
-                cv.cvtColor(tileMat, grayTile, cv.COLOR_RGBA2GRAY, 0);
-                
-                const mean = new cv.Mat();
-                const stdDev = new cv.Mat();
-                matsToClean.push(mean, stdDev);
-                cv.meanStdDev(grayTile, mean, stdDev);
-                
-                const stdDevValue = stdDev.data64F[0];
-                // This threshold determines if a tile is empty. A lower value is more
-                // sensitive and less likely to classify a low-contrast piece as empty.
-                const varianceThreshold = 36;
-                const stdDevThreshold = Math.sqrt(varianceThreshold); // = 6
-
-                if (stdDevValue < stdDevThreshold) {
-                    emptyTilesInfo.push({ square, piece: 'empty', confidence: 1.0 });
-                } else {
-                    const finalTileMat = new cv.Mat();
-                    matsToClean.push(finalTileMat);
-                    cv.resize(tileMat, finalTileMat, new cv.Size(targetTileSize, targetTileSize), 0, 0, cv.INTER_AREA);
-                    
-                    const tileCanvas = document.createElement('canvas');
-                    tileCanvas.width = targetTileSize;
-                    tileCanvas.height = targetTileSize;
-                    cv.imshow(tileCanvas, finalTileMat);
-                    canvases.push({ square, canvas: tileCanvas });
-                }
-            }
-        }
-        return { canvases, emptyTilesInfo };
-    } finally {
-        // Clean up all allocated OpenCV memory.
-        matsToClean.forEach(mat => {
-            if (mat && !mat.isDeleted()) {
-                mat.delete();
-            }
-        });
-    }
-};
-
-/**
- * Uses OpenCV.js to perform a perspective warp on an image.
- * @param imageFile The source image file.
- * @param corners The four corner points of the quadrilateral to warp.
- * @param outputSize The width and height of the resulting square image.
- * @returns A promise that resolves with the warped image as a File object.
- */
-export const warpImage = async (
-    imageFile: File,
-    corners: { top_left: [number, number], top_right: [number, number], bottom_right: [number, number], bottom_left: [number, number] },
-    outputSize: number
-): Promise<File> => {
-    await window.cvReady; // Ensure OpenCV is loaded
-    const cv = window.cv;
-
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            const img = new Image();
-            img.onload = () => {
-                const matsToClean = [];
-                try {
-                    const src = cv.imread(img);
-                    matsToClean.push(src);
-                    
-                    // Define source and destination corners for the perspective transform
-                    const srcCorners = cv.matFromArray(4, 1, cv.CV_32FC2, [
-                        ...corners.top_left,
-                        ...corners.top_right,
-                        ...corners.bottom_right,
-                        ...corners.bottom_left
-                    ]);
-                    matsToClean.push(srcCorners);
-
-                    const dstCorners = cv.matFromArray(4, 1, cv.CV_32FC2, [
-                        0, 0,
-                        outputSize, 0,
-                        outputSize, outputSize,
-                        0, outputSize
-                    ]);
-                    matsToClean.push(dstCorners);
-
-                    const M = cv.getPerspectiveTransform(srcCorners, dstCorners);
-                    matsToClean.push(M);
-                    const dsize = new cv.Size(outputSize, outputSize);
-                    const warped = new cv.Mat();
-                    matsToClean.push(warped);
-                    cv.warpPerspective(src, warped, M, dsize, cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar());
-                    
-                    const canvas = document.createElement('canvas');
-                    cv.imshow(canvas, warped);
-
-                    canvas.toBlob(blob => {
-                        if (blob) {
-                            resolve(new File([blob], 'warped.png', { type: 'image/png' }));
-                        } else {
-                            reject(new Error("Canvas to Blob conversion failed."));
-                        }
-                    }, 'image/png');
-                } catch (e) {
-                    reject(e);
-                } finally {
-                    // Clean up all OpenCV memory
-                    matsToClean.forEach(mat => {
-                        if (mat && !mat.isDeleted()) {
-                            mat.delete();
-                        }
-                    });
-                }
-            };
-            img.onerror = () => reject(new Error('Failed to load image for warping.'));
-            img.src = event.target?.result as string;
-        };
-        reader.onerror = (e) => reject(new Error(`FileReader error: ${e}`));
-        reader.readAsDataURL(imageFile);
-    });
-};
-
+/* ---------- PDF thumbnail generator (fixed to use dynamic worker) ---------- */
 
 /**
  * Generates a thumbnail image from the first page of a PDF file.
- * It uses the pdf.js library to render the PDF page onto a canvas and then exports it as a data URL.
- * @param file The PDF file object.
- * @param pageNum The page number to generate the thumbnail from (defaults to 1).
- * @returns A promise that resolves with a data URL (jpeg format) of the thumbnail.
+ * Uses pdfjs-dist runtime version to set worker URL dynamically.
  */
 export const generatePdfThumbnail = async (file: File, pageNum = 1): Promise<string> => {
-    // Set up the web worker for pdf.js to avoid blocking the main thread.
-    // The library and worker versions must match.
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://aistudiocdn.com/pdfjs-dist@5.4.149/build/pdf.worker.mjs`;
-    
-    // Read the file into an ArrayBuffer.
+    const runtimeVersion = (pdfjsLib as any)?.version || (pdfjsLib as any)?.pdfjsVersion || '4.10.38';
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://aistudiocdn.com/pdfjs-dist@${runtimeVersion}/build/pdf.worker.mjs`;
+
     const arrayBuffer = await file.arrayBuffer();
-    
-    // Load the PDF document from the ArrayBuffer.
     const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
     const doc = await loadingTask.promise;
-    
-    // Get the specified page from the document.
     const page = await doc.getPage(pageNum);
-    
-    // Create a viewport with a small scale for a low-resolution thumbnail.
+
     const viewport = page.getViewport({ scale: 0.5 });
-    
-    // Create a temporary canvas element to render the page onto.
+
     const canvas = document.createElement('canvas');
     canvas.width = viewport.width;
     canvas.height = viewport.height;
     const context = canvas.getContext('2d');
-    
+
     if (context) {
-        // Render the page onto the canvas context.
         await page.render({ canvasContext: context, viewport }).promise;
     }
-    
-    // Clean up pdf.js resources to free up memory.
-    page.cleanup();
-    doc.destroy();
-    
-    // Convert the canvas content to a JPEG data URL with 80% quality.
+
+    try { page.cleanup(); } catch (e) { /* ignore */ }
+    try { doc.destroy(); } catch (e) { /* ignore */ }
+
     return canvas.toDataURL('image/jpeg', 0.8);
 };
 
-/**
- * Generates a lightweight SVG thumbnail of a chessboard from a FEN string.
- * @param fen The FEN string of the position to render.
- * @returns A base64-encoded data URL for the SVG image.
- */
+/* ---------- remaining helpers (unchanged) ---------- */
+
 export const generateBoardThumbnail = (fen: string): string => {
     try {
         const { board } = fenToBoardState(fen);
@@ -492,7 +217,6 @@ export const generateBoardThumbnail = (fen: string): string => {
         const squareSize = size / 8;
         let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}">`;
 
-        // Board squares
         for (let r = 0; r < 8; r++) {
             for (let c = 0; c < 8; c++) {
                 const isLight = (r + c) % 2 !== 0;
@@ -500,7 +224,6 @@ export const generateBoardThumbnail = (fen: string): string => {
             }
         }
 
-        // Pieces
         board.forEach((row, r) => {
             row.forEach((piece, c) => {
                 if (piece) {
@@ -513,21 +236,14 @@ export const generateBoardThumbnail = (fen: string): string => {
         });
 
         svg += '</svg>';
-        // Correctly handle unicode characters for base64 encoding.
         const base64Svg = btoa(unescape(encodeURIComponent(svg)));
         return `data:image/svg+xml;base64,${base64Svg}`;
     } catch (e) {
         console.error("Failed to generate board thumbnail for FEN:", fen, e);
-        // Return a transparent placeholder on error
         return "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
     }
 };
 
-/**
- * Generates a high-quality SVG image of a chessboard from a FEN string for sharing.
- * @param fen The FEN string of the position to render.
- * @returns A base64-encoded data URL for the SVG image.
- */
 export const generateBoardImageForSharing = (fen: string): string => {
     try {
         const { board } = fenToBoardState(fen);
@@ -535,7 +251,6 @@ export const generateBoardImageForSharing = (fen: string): string => {
         const squareSize = size / 8;
         let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" font-family="Arial, sans-serif">`;
 
-        // Board squares
         for (let r = 0; r < 8; r++) {
             for (let c = 0; c < 8; c++) {
                 const isLight = (r + c) % 2 !== 0;
@@ -543,7 +258,6 @@ export const generateBoardImageForSharing = (fen: string): string => {
             }
         }
 
-        // Pieces
         board.forEach((row, r) => {
             row.forEach((piece, c) => {
                 if (piece) {
@@ -564,11 +278,6 @@ export const generateBoardImageForSharing = (fen: string): string => {
     }
 };
 
-/**
- * Computes a SHA-1 hash of an image file for duplicate detection.
- * @param file The image file to hash.
- * @returns A promise that resolves with the SHA-1 hash as a hex string.
- */
 export const computeImageHash = async (file: File): Promise<string> => {
   const buffer = await file.arrayBuffer();
   const hashBuffer = await crypto.subtle.digest('SHA-1', buffer);
@@ -609,11 +318,6 @@ export const findPathToNode = (root: HistoryEntry, nodeId: string): HistoryEntry
     return null;
 };
 
-/**
- * Attempts to determine whose turn it is from an image using OCR.
- * @param imageFile The image file of the chess diagram.
- * @returns 'w' for white, 'b' for black, or null if it cannot be determined.
- */
 const detectTurnWithOCR = async (imageFile: File): Promise<PieceColor | null> => {
     try {
         if (typeof Tesseract === 'undefined') {
@@ -624,120 +328,227 @@ const detectTurnWithOCR = async (imageFile: File): Promise<PieceColor | null> =>
         const { data: { text } } = await worker.recognize(imageFile);
         await worker.terminate();
 
-        const lowerText = text.toLowerCase().replace(/[^a-z\s]/g, ''); // Clean text
+        const lowerText = text.toLowerCase().replace(/[^a-z\s]/g, '');
         
         if (lowerText.includes('white to move') || lowerText.includes('white to play')) {
-            console.debug('OCR detected: White to move');
             return 'w';
         }
         if (lowerText.includes('black to move') || lowerText.includes('black to play')) {
-            console.debug('OCR detected: Black to move');
             return 'b';
         }
-
-        console.debug('OCR did not find turn information in text:', text);
         return null;
     } catch (err) {
         console.error("Tesseract OCR for turn detection failed:", err);
         return null;
     }
-}
+};
 
 /**
- * Attempts to determine whose turn it is by looking for a black square indicator.
- * @param imageFile The image file of the chess diagram.
- * @returns 'b' if a black-to-move indicator is found, otherwise null.
+ * New: Uses OpenCV to find candidate marker shapes, squares them up, and sends them to Server 2.
+ * @param imageFile The full cropped image (board + margins).
+ * @returns The detected turn ('w' or 'b') or null.
  */
-const detectTurnWithShapeDetection = async (imageFile: File): Promise<PieceColor | null> => {
-    // This is a simplified version without OpenCV. It checks pixels in a region on the right.
-    return new Promise((resolve) => {
-        const img = new Image();
-        const objectUrl = URL.createObjectURL(imageFile);
-        img.onload = () => {
-            URL.revokeObjectURL(objectUrl);
-            const canvas = document.createElement('canvas');
-            canvas.width = img.width;
-            canvas.height = img.height;
-            const ctx = canvas.getContext('2d');
-            if (!ctx) {
-                resolve(null);
-                return;
-            }
-            ctx.drawImage(img, 0, 0);
+const findAndAnalyzeTurnMarkersCV = async (imageFile: File): Promise<PieceColor | null> => {
+    await window.cvReady;
+    const cv = window.cv;
+    const mats: any[] = [];
+    try {
+        const imgElement = await fileToImage(imageFile);
+        const src = cv.imread(imgElement);
+        mats.push(src);
 
-            // Check a region on the right, near the top where indicators usually are.
-            const margin = Math.floor(img.width * 0.05);
-            const checkWidth = Math.floor(img.width * 0.1);
-            const checkHeight = Math.floor(img.height * 0.2);
-            const roiX = img.width - margin - checkWidth;
-            const roiY = Math.floor(img.height * 0.1); // Check near the top right
+        const gray = new cv.Mat();
+        mats.push(gray);
+        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
 
-            if (roiX < 0 || roiY < 0 || checkWidth <= 0 || checkHeight <= 0) {
-                resolve(null);
-                return;
-            }
+        const thresh = new cv.Mat();
+        mats.push(thresh);
+        cv.threshold(gray, thresh, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
+        
+        const contours = new cv.MatVector();
+        mats.push(contours);
+        const hierarchy = new cv.Mat();
+        mats.push(hierarchy);
+        cv.findContours(thresh, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
-            try {
-                const imageData = ctx.getImageData(roiX, roiY, checkWidth, checkHeight);
-                const data = imageData.data;
-                let totalLuminance = 0;
-                let pixelCount = 0;
-                for (let i = 0; i < data.length; i += 4) {
-                    const r = data[i];
-                    const g = data[i+1];
-                    const b = data[i+2];
-                    // Using luminance formula
-                    const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
-                    totalLuminance += luminance;
-                    pixelCount++;
-                }
+        const marginWidth = src.cols * 0.15; // Search in the outer 15% margins
+        const minArea = 50; // Minimum pixel area to be considered a shape
+        const maxArea = src.cols * src.rows * 0.01; // Max 1% of total image area
 
-                const averageLuminance = totalLuminance / pixelCount;
+        for (let i = 0; i < contours.size(); ++i) {
+            const cnt = contours.get(i);
+            const rect = cv.boundingRect(cnt);
+            
+            // Filter criteria
+            const isShapeInMargin = rect.x < marginWidth || rect.x + rect.width > src.cols - marginWidth;
+            const isShapeGoodSize = rect.width * rect.height > minArea && rect.width * rect.height < maxArea;
+            const aspectRatio = rect.width / rect.height;
+            const isShapeSquarish = aspectRatio > 0.7 && aspectRatio < 1.3;
+
+            if (isShapeInMargin && isShapeGoodSize && isShapeSquarish) {
+                // We found a candidate. Crop it from the original color image.
+                const cropped = src.roi(rect);
                 
-                // If average luminance is very dark (e.g., < 50 on a 0-255 scale),
-                // it's likely the black-to-move indicator.
-                if (averageLuminance < 50) {
-                    console.debug(`Shape detection found dark region (avg luminance: ${averageLuminance}), assuming Black to move`);
-                    resolve('b');
-                } else {
-                    resolve(null);
-                }
-            } catch (e) {
-                console.error("Pixel analysis for turn detection failed:", e);
-                resolve(null);
-            }
-        };
-        img.onerror = () => {
-             URL.revokeObjectURL(objectUrl);
-             resolve(null);
-        };
-        img.src = objectUrl;
-    });
-}
+                // "Square-up" the cropped image for the YOLO model
+                const size = Math.max(cropped.rows, cropped.cols);
+                const squareMat = new cv.Mat(size, size, cropped.type(), [255, 255, 255, 255]); // White background
+                const xOffset = Math.floor((size - cropped.cols) / 2);
+                const yOffset = Math.floor((size - cropped.rows) / 2);
+                const roi = squareMat.roi(new cv.Rect(xOffset, yOffset, cropped.cols, cropped.rows));
+                cropped.copyTo(roi);
 
-export const determineTurnFromImage = async (imageFile: File): Promise<{turn: PieceColor, ocr_turn_detection_ms: number | null, shape_turn_detection_ms: number | null}> => {
-    console.debug("--- Client-side Turn Detection Started ---");
+                // Convert the squared-up Mat to a File to send to the mock server
+                const tempCanvas = document.createElement('canvas');
+                cv.imshow(tempCanvas, squareMat);
+                const blob = await new Promise<Blob|null>(resolve => tempCanvas.toBlob(resolve, 'image/png'));
+                
+                // Cleanup temp mats for this loop iteration
+                cropped.delete();
+                squareMat.delete();
+                roi.delete();
+
+                if (blob) {
+                    const markerFile = new File([blob], 'turn_marker.png', { type: 'image/png' });
+                    const { turn } = await analyzeTurnMarker(markerFile);
+                    if (turn) {
+                        cnt.delete();
+                        return turn; // Found a valid turn, exit early.
+                    }
+                }
+            }
+            cnt.delete();
+        }
+        return null; // No valid turn marker found after checking all contours.
+    } catch(e) {
+        console.error("OpenCV shape detection failed:", e);
+        return null;
+    } finally {
+        // Ensure all mats are deleted to prevent memory leaks
+        mats.forEach(mat => {
+            if (mat && !mat.isDeleted()) mat.delete();
+        });
+    }
+};
+
+
+export const determineTurnFromImage = async (imageFile: File): Promise<{turn: PieceColor, ocr_turn_detection_ms: number | null, shape_turn_detection_ms: number | null }> => {
     let ocr_turn_detection_ms: number | null = null;
     let shape_turn_detection_ms: number | null = null;
-
+    
+    // Priority 1: OCR for text ("White to play", etc.)
     const ocrStartTime = performance.now();
     const ocrResult = await detectTurnWithOCR(imageFile);
     ocr_turn_detection_ms = performance.now() - ocrStartTime;
     
     if (ocrResult) {
-        console.debug("--- Client-side Turn Detection Finished (OCR) ---");
-        return { turn: ocrResult, ocr_turn_detection_ms, shape_turn_detection_ms: null };
+        console.log(`Client-side turn detection: Found text '${ocrResult}' via OCR.`);
+        return { turn: ocrResult, ocr_turn_detection_ms, shape_turn_detection_ms };
     }
 
+    // Priority 2: OpenCV + Server 2 for shape markers (squares, triangles, etc.)
     const shapeStartTime = performance.now();
-    const shapeResult = await detectTurnWithShapeDetection(imageFile);
+    const shapeResult = await findAndAnalyzeTurnMarkersCV(imageFile);
     shape_turn_detection_ms = performance.now() - shapeStartTime;
 
     if (shapeResult) {
-        console.debug("--- Client-side Turn Detection Finished (Shape) ---");
+        console.log(`Client-side turn detection: Found shape marker for '${shapeResult}' via OpenCV + Server 2.`);
         return { turn: shapeResult, ocr_turn_detection_ms, shape_turn_detection_ms };
     }
     
-    console.debug("--- Client-side Turn Detection Finished (Default) ---");
-    return { turn: 'w', ocr_turn_detection_ms, shape_turn_detection_ms }; // Default to white
+    // Priority 3: Default to White if nothing is found
+    console.log("Client-side turn detection: No markers found. Defaulting to White's turn.");
+    return { turn: 'w', ocr_turn_detection_ms, shape_turn_detection_ms };
+};
+
+export const calculateIoU = (boxA: BoundingBox, boxB: BoundingBox): number => {
+    const xA = Math.max(boxA.x, boxB.x);
+    const yA = Math.max(boxA.y, boxB.y);
+    const xB = Math.min(boxA.x + boxA.width, boxB.x + boxB.width);
+    const yB = Math.min(boxA.y + boxA.height, boxB.y + boxB.height);
+
+    const interArea = Math.max(0, xB - xA) * Math.max(0, yB - yA);
+    const boxAArea = boxA.width * boxA.height;
+    const boxBArea = boxB.width * boxB.height;
+    const unionArea = boxAArea + boxBArea - interArea;
+
+    return unionArea > 0 ? interArea / unionArea : 0;
+};
+
+export const detectChessboardsCV = async (canvas: HTMLCanvasElement): Promise<BoundingBox[]> => {
+    await window.cvReady;
+    const cv = window.cv;
+    const mats: any[] = [];
+    try {
+        const src = cv.imread(canvas);
+        mats.push(src);
+
+        const gray = new cv.Mat();
+        mats.push(gray);
+        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
+
+        const blurred = new cv.Mat();
+        mats.push(blurred);
+        cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0, 0, cv.BORDER_DEFAULT);
+
+        const canny = new cv.Mat();
+        mats.push(canny);
+        cv.Canny(blurred, canny, 50, 150, 3, false);
+
+        const contours = new cv.MatVector();
+        mats.push(contours);
+        const hierarchy = new cv.Mat();
+        mats.push(hierarchy);
+        cv.findContours(canny, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+        const detectedBoxes: BoundingBox[] = [];
+        const minArea = (src.cols * src.rows) * 0.01;
+
+        for (let i = 0; i < contours.size(); ++i) {
+            const cnt = contours.get(i);
+            const peri = cv.arcLength(cnt, true);
+            const approx = new cv.Mat();
+            cv.approxPolyDP(cnt, approx, 0.04 * peri, true);
+
+            if (approx.rows === 4) {
+                const area = cv.contourArea(approx);
+                const rect = cv.boundingRect(approx);
+                const aspectRatio = rect.width / rect.height;
+
+                if (area > minArea && aspectRatio > 0.8 && aspectRatio < 1.2) {
+                    detectedBoxes.push({
+                        x: rect.x / src.cols,
+                        y: rect.y / src.rows,
+                        width: rect.width / src.cols,
+                        height: rect.height / src.rows,
+                    });
+                }
+            }
+            cnt.delete();
+            approx.delete();
+        }
+
+        detectedBoxes.sort((a, b) => (b.width * b.height) - (a.width * a.height));
+        const finalBoxes: BoundingBox[] = [];
+        const iouThreshold = 0.5;
+
+        for (const boxA of detectedBoxes) {
+            let keep = true;
+            for (const boxB of finalBoxes) {
+                const iou = calculateIoU(boxA, boxB);
+                if (iou > iouThreshold) {
+                    keep = false;
+                    break;
+                }
+            }
+            if (keep) {
+                finalBoxes.push(boxA);
+            }
+        }
+        
+        return finalBoxes;
+    } finally {
+        mats.forEach(mat => {
+            if (mat && !mat.isDeleted()) mat.delete();
+        });
+    }
 };
