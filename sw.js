@@ -1,4 +1,4 @@
-const CACHE_NAME = 'scan-to-chess-v4';
+const CACHE_NAME = 'scan-to-chess-v5';
 // Add all local assets and key CDN assets to the cache
 const urlsToCache = [
   '/',
@@ -48,7 +48,6 @@ const urlsToCache = [
   'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js'
 ];
 
-// Install the service worker and cache all the app's content
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
@@ -61,7 +60,6 @@ self.addEventListener('install', (event) => {
   );
 });
 
-// Activate the service worker and clean up old caches
 self.addEventListener('activate', (event) => {
   const cacheWhitelist = [CACHE_NAME];
   event.waitUntil(
@@ -78,14 +76,36 @@ self.addEventListener('activate', (event) => {
   return self.clients.claim();
 });
 
-// Intercept fetch requests
 self.addEventListener('fetch', (event) => {
-  // For all other requests, apply cache-first strategy.
-  // We only cache GET requests.
   if (event.request.method !== 'GET') {
     return;
   }
 
+  const url = new URL(event.request.url);
+
+  // For critical app files (HTML, JS bundle) and navigation, use a network-first strategy.
+  // This ensures users who are online always get the latest version.
+  const isAppShell = url.pathname === '/' || url.pathname === '/index.html' || url.pathname === '/dist/bundle.js' || url.pathname === '/manifest.json';
+  if (isAppShell || event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request)
+        .then(response => {
+          // If the network request is successful, cache the response and return it.
+          const responseToCache = response.clone();
+          caches.open(CACHE_NAME).then(cache => {
+            cache.put(event.request, responseToCache);
+          });
+          return response;
+        })
+        .catch(() => {
+          // If the network fails, try to serve from the cache.
+          return caches.match(event.request);
+        })
+    );
+    return;
+  }
+
+  // For all other assets (fonts, CDN libraries, etc.), use a cache-first strategy for performance.
   event.respondWith(
     caches.match(event.request)
       .then((response) => {
@@ -94,25 +114,17 @@ self.addEventListener('fetch', (event) => {
           return response;
         }
 
-        // Not in cache, fetch from network and cache it
+        // Not in cache, fetch from network and then cache the new response.
         return fetch(event.request).then(
           (response) => {
-            // Check if we received a valid response
             if (!response || (response.status !== 200 && response.type !== 'opaque' && response.type !== 'cors')) {
               return response;
             }
-
-            // IMPORTANT: Clone the response. A response is a stream
-            // and because we want the browser to consume the response
-            // as well as the cache consuming the response, we need
-            // to clone it so we have two streams.  
             const responseToCache = response.clone();
-
             caches.open(CACHE_NAME)
               .then((cache) => {
                  cache.put(event.request, responseToCache);
               });
-
             return response;
           }
         );
@@ -120,7 +132,6 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
-// Listen for a message from the client to skip waiting and activate the new service worker.
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();

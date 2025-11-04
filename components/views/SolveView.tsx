@@ -120,7 +120,7 @@ interface SolveViewProps {
     onBack: () => void;
     onHome: () => void;
     appSettings: AppSettingsHook;
-    onNextPuzzle: () => void;
+    onNextPuzzle: (sourceView: AppState) => void;
     source: 'pdf' | 'image';
     initialHistory?: HistoryEntry[] | null;
     initialGameId?: number;
@@ -421,7 +421,7 @@ const SolveView = ({
                                 pieceTheme={appSettings.pieceTheme} 
                             />
                             {renderedArrows.length > 0 && ( <svg className="drawing-overlay" width="100%" height="100%"><defs><marker id="arrowhead" viewBox="0 -24 41.57 48" refX="0" refY="0" markerUnits="userSpaceOnUse" markerWidth="48" markerHeight="48" orient="auto"><polygon points="41.57,0 0,-24 0,24" /></marker></defs>{renderedArrows}</svg> )}
-                            {isGameOver && ( <div className="game-over-overlay"><h2>{gameStatus}</h2><button className="btn btn-secondary" onClick={() => { onNextPuzzle(); }}>{nextButtonText}</button></div> )}
+                            {isGameOver && ( <div className="game-over-overlay"><h2>{gameStatus}</h2><button className="btn btn-secondary" onClick={() => onNextPuzzle(sourceView)}>{nextButtonText}</button></div> )}
                         </div>
                         <div className="captured-pieces-row">
                             <CapturedPieces color="b" pieces={capturedBlackPieces} scoreAdvantage={materialAdvantage.whiteAdvantage} pieceTheme={appSettings.pieceTheme} displayMode="inline" />
@@ -463,7 +463,7 @@ const SolveView = ({
                                 <AdviceIcon />
                                 <span>{cooldown > 0 ? `Analysis (${Math.floor(cooldown/60)}:${String(cooldown%60).padStart(2,'0')})` : 'Analysis'}</span>
                             </button>
-                            <button className="btn-icon btn-analyze" onClick={() => { onNextPuzzle(); }} title={nextButtonTitle} aria-label={nextButtonTitle}>
+                            <button className="btn-icon btn-analyze" onClick={() => onNextPuzzle(sourceView)} title={nextButtonTitle} aria-label={nextButtonTitle}>
                                 <PlusIcon />
                             </button>
                         </div>

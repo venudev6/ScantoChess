@@ -85,6 +85,7 @@ export const ProtectedApp = ({
     const [scanFailureMessage, setScanFailureMessage] = useState<string | null>(null);
     const [pdfToSync, setPdfToSync] = useState<number | null>(null);
     const [isCameraAvailable, setIsCameraAvailable] = useState<boolean>(true);
+    const [scanFlowOrigin, setScanFlowOrigin] = useState<AppState>('initial');
 
 
     const {
@@ -200,12 +201,14 @@ export const ProtectedApp = ({
         clearSelectedPdf();
         setInitialGameHistory(null);
         setLoadedGameId(undefined);
+        setScanFlowOrigin('initial');
         setAppState('initial');
     }, [setAppState, clearSelectedPdf]);
 
     // --- IMAGE & ANALYSIS WORKFLOW ---
-    const handleFileSelect = (file: File) => {
+    const handleFileSelect = (file: File, origin: AppState) => {
         if (isGuestPastTrial) return onAuthRequired();
+        setScanFlowOrigin(origin);
         setImageData(file);
         setAppState('preview');
     };
@@ -219,6 +222,7 @@ export const ProtectedApp = ({
 
     const handleCameraSelect = () => {
         if (isGuestPastTrial) return onAuthRequired();
+        setScanFlowOrigin('camera');
         setAppState('camera');
     };
     
@@ -301,11 +305,20 @@ export const ProtectedApp = ({
     
     const handlePdfCropConfirm = async (file: File, context: { page: number, totalPages: number }, clientProcessingTime: number) => {
         setPdfContext(context);
+        setScanFlowOrigin('pdfViewer');
         await handleCropConfirm(file, clientProcessingTime);
     };
 
     const handlePreScannedPuzzleFound = (fen: string) => {
         soundManager.play('UI_CLICK');
+
+        // If we're coming from the PDF viewer's deep scan results,
+        // set the origin so "Next Puzzle" knows where to return.
+        if (appState === 'pdfViewer') {
+            setScanFlowOrigin('pdfViewer');
+        }
+        // For ImagePreview, scanFlowOrigin is already correctly set by handleFileSelect/handleCameraSelect.
+        
         setAnalysisResult({
             fen: fen,
             turn: fenToBoardState(fen).turn,
@@ -390,9 +403,21 @@ export const ProtectedApp = ({
         setAppState('solve');
     };
     
-    const handleNextPuzzle = () => {
-        if (pdfContext && selectedPdf) {
+    const handleNextPuzzle = (sourceView: AppState) => {
+        soundManager.play('UI_CLICK');
+        if (sourceView === 'savedGames') {
+            setAppState('savedGames');
+            return;
+        }
+        if (sourceView === 'history') {
+            setAppState('history');
+            return;
+        }
+    
+        if (scanFlowOrigin === 'pdfViewer') {
             setAppState('pdfViewer');
+        } else if (scanFlowOrigin === 'camera') {
+            setAppState('camera');
         } else {
             resetToInitial();
         }
@@ -451,7 +476,7 @@ export const ProtectedApp = ({
             case 'initial':
                 return (
                     <InitialView
-                        onFileSelect={handleFileSelect}
+                        onFileSelect={(file) => handleFileSelect(file, 'initial')}
                         onPdfSelect={handlePdfSelect}
                         onCameraSelect={handleCameraSelect}
                         onFenLoad={handleFenLoad}
@@ -472,7 +497,7 @@ export const ProtectedApp = ({
                     />
                 );
             case 'camera':
-                return <CameraView onCapture={handleFileSelect} onBack={resetToInitial} />;
+                return <CameraView onCapture={(file) => handleFileSelect(file, 'camera')} onBack={resetToInitial} />;
             case 'preview':
                 return imageData && <ImagePreview imageFile={imageData} onPuzzleSelect={handlePreScannedPuzzleFound} onBack={resetToInitial} />;
             case 'pdfViewer':
@@ -556,6 +581,7 @@ export const ProtectedApp = ({
                 return <div>Invalid state</div>;
         }
     };
+
 
     return (
         <>
