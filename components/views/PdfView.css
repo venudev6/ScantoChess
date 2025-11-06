@@ -7,7 +7,7 @@
 .pdf-viewer-container { display:flex; flex-direction:column; height:100%; width:100%; position:relative; background:#f3f4f6; overflow:hidden; }
 .pdf-toolbar { position:sticky; top:0; z-index:60; display:flex; align-items:center; justify-content:center; padding:0.5rem 1rem; background:#fff; border-bottom:1px solid var(--border-color); box-shadow:0 2px 4px rgba(0,0,0,0.04); position: relative; }
 .pdf-toolbar-left { position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); display:flex; align-items:center; gap:0.75rem; }
-.pdf-toolbar-right { display:flex; align-items:center; gap:0.75rem; }
+.pdf-toolbar-right { position: absolute; right: 1rem; top: 50%; transform: translateY(-50%); display:flex; align-items:center; gap:0.75rem; }
 .pdf-toolbar-center { flex:1; justify-content:center; display:flex; align-items:center; gap:0.75rem;}
 
 /* Modern Button Groups */
@@ -290,6 +290,30 @@
 /* helpers */
 .thumb-loading { color:var(--text-muted-color); padding:8px; font-size:0.95rem; }
 
+/* New styles for bare icon button */
+.btn-icon-bare {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    height: 40px;
+    width: 40px;
+}
+.btn-icon-bare:hover:not(:disabled) {
+    background-color: #e5e7eb;
+    border-radius: 50%; /* circular hover effect */
+}
+.btn-icon-bare svg {
+    color: var(--text-muted-color);
+    width: 24px;
+    height: 24px;
+}
+.btn-icon-bare:hover:not(:disabled) svg {
+    color: var(--text-color);
+}
+.btn-icon-bare.completed-scan svg {
+    color: var(--success-color);
+}
+
 /* responsive */
 @media (max-width:900px) {
   .pdf-filmstrip { display:none; }
@@ -305,7 +329,7 @@
     height: auto;
   }
 
-  .pdf-toolbar-left {
+  .pdf-toolbar-left, .pdf-toolbar-right {
     position: static;
     transform: none;
   }
@@ -316,8 +340,11 @@
   }
 
   .pdf-toolbar-right {
-    justify-content: center;
-    order: -1; /* Move button groups to the top row on wrap */
+    justify-content: flex-end; /* Align to the right */
+  }
+
+  .pdf-toolbar-center {
+    order: -1; /* Move center group to the top row on wrap */
     flex-basis: 100%;
   }
 

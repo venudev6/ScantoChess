@@ -45,6 +45,18 @@ const UserPanel = ({ user, isLoggedIn, onLogout, onAdminPanelClick, onSavedGames
         setOpenSection(prev => (prev === section ? null : section));
     };
 
+    const handleViewYoloLog = () => {
+        if (analysisDetails?.yoloRequestPayload && analysisDetails?.yoloResponse) {
+            const debugData = {
+                payload: analysisDetails.yoloRequestPayload,
+                response: analysisDetails.yoloResponse,
+                endpoint: 'https://server-nandan-yolov8-466929233043.asia-south1.run.app/predict'
+            };
+            sessionStorage.setItem('yoloDebugData', JSON.stringify(debugData));
+            window.open('/?view=yolo-debug', '_blank');
+        }
+    };
+
     // The calculation logic
     const networkTime = useMemo(() => {
         if (scanDuration === null || clientProcessingTime === null || serverProcessingTime === null) return null;
@@ -196,7 +208,7 @@ const UserPanel = ({ user, isLoggedIn, onLogout, onAdminPanelClick, onSavedGames
                                             <img src={analysisDetails.warpedImageDataUrl} alt="Warped image used for analysis" style={{width: '100%', borderRadius: '4px', border: '1px solid var(--border-color)', marginTop: '0.5rem'}}/>
                                         </div>
                                     )}
-                                    
+
                                     {analysisDetails?.postProcess?.autoFixes && analysisDetails.postProcess.autoFixes.length > 0 && (
                                         <div className="post-scan-validations">
                                             <h4>Post-Scan Validations ({analysisDetails.postProcess.autoFixes.length})</h4>
@@ -225,7 +237,13 @@ const UserPanel = ({ user, isLoggedIn, onLogout, onAdminPanelClick, onSavedGames
                     <button className="user-menu-item" onClick={onHistoryClick} title="View your game history">
                         <HistoryIcon /><span>Game History</span>
                     </button>
-
+                    
+                    {analysisDetails?.yoloResponse && displayMode === 'full' && (
+                        <button className="user-menu-item" onClick={handleViewYoloLog} title="View the full YOLOv8 server log for turn detection">
+                            <ExternalLinkIcon /><span>Turn Detection Log</span>
+                        </button>
+                    )}
+                    
                     <button className={`user-menu-item ${openSection === 'boardSettings' ? 'active-section' : ''}`} onClick={() => toggleSection('boardSettings')}>
                         <SettingsIcon />
                         <span>Board Settings</span>

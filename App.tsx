@@ -62,15 +62,18 @@ const AppContent = () => {
         // This effect runs only once on initial load.
         const params = new URLSearchParams(window.location.search);
         const action = params.get('action');
+        const view = params.get('view');
 
-        if (action === 'camera') {
+        if (view === 'yolo-debug') {
+            handleSetAppState('yoloDebug');
+        } else if (action === 'camera') {
             handleSetAppState('camera');
         } else if (action === 'upload') {
             setTriggerUpload(true);
         }
         
         // Clean the URL so a refresh doesn't re-trigger the action
-        if (action) {
+        if (action || view) {
             window.history.replaceState({}, document.title, window.location.pathname);
         }
     }, []); // Empty array ensures it runs only once.

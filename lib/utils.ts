@@ -35,22 +35,7 @@ export const expandBox = (box: BoundingBox, percent: number): BoundingBox => {
     return { x: newX, y: newY, width: newWidth, height: newHeight };
 };
 
-/* ---------- helper functions (unchanged) ---------- */
-
-export const fileToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-            if (typeof reader.result === 'string') {
-                resolve(reader.result);
-            } else {
-                reject(new Error('Failed to read file as data URL.'));
-            }
-        };
-        reader.onerror = error => reject(error);
-        reader.readAsDataURL(file);
-    });
-};
+/* ---------- helper functions ---------- */
 
 export const fileToImage = (file: File): Promise<HTMLImageElement> => {
     return new Promise((resolve, reject) => {
@@ -171,17 +156,6 @@ export const dataUrlToBlob = async (dataUrl: string): Promise<Blob> => {
     });
 };
 
-export const dataUrlToFile = async (dataUrl: string, fileName: string): Promise<File> => {
-    const blob = await dataUrlToBlob(dataUrl);
-    return new File([blob], fileName, { type: blob.type });
-};
-
-/* ---------- PDF thumbnail generator (fixed to use dynamic worker) ---------- */
-
-/**
- * Generates a thumbnail image from the first page of a PDF file.
- * Uses pdfjs-dist runtime version to set worker URL dynamically.
- */
 export const generatePdfThumbnail = async (file: File, pageNum = 1): Promise<string> => {
     const runtimeVersion = (pdfjsLib as any)?.version || (pdfjsLib as any)?.pdfjsVersion || '4.10.38';
     pdfjsLib.GlobalWorkerOptions.workerSrc = `https://aistudiocdn.com/pdfjs-dist@${runtimeVersion}/build/pdf.worker.mjs`;
@@ -207,8 +181,6 @@ export const generatePdfThumbnail = async (file: File, pageNum = 1): Promise<str
 
     return canvas.toDataURL('image/jpeg', 0.8);
 };
-
-/* ---------- remaining helpers (unchanged) ---------- */
 
 export const generateBoardThumbnail = (fen: string): string => {
     try {
@@ -244,12 +216,18 @@ export const generateBoardThumbnail = (fen: string): string => {
     }
 };
 
+// FIX: Add missing generateBoardImageForSharing function.
+/**
+ * Generates a larger SVG data URL for a given FEN, suitable for sharing.
+ * @param fen The FEN string of the board position.
+ * @returns A base64 data URL for the SVG image.
+ */
 export const generateBoardImageForSharing = (fen: string): string => {
     try {
         const { board } = fenToBoardState(fen);
-        const size = 800;
+        const size = 400; // Larger size for sharing
         const squareSize = size / 8;
-        let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" font-family="Arial, sans-serif">`;
+        let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}">`;
 
         for (let r = 0; r < 8; r++) {
             for (let c = 0; c < 8; c++) {
@@ -264,7 +242,8 @@ export const generateBoardImageForSharing = (fen: string): string => {
                     const unicode = UNICODE_PIECES[piece.color][piece.type];
                     const pieceColor = piece.color === 'w' ? '#fff' : '#000';
                     const strokeColor = piece.color === 'w' ? '#000' : '#fff';
-                    svg += `<text x="${c * squareSize + squareSize / 2}" y="${r * squareSize + squareSize / 2}" font-size="${squareSize * 0.85}" text-anchor="middle" dominant-baseline="central" fill="${pieceColor}" stroke="${strokeColor}" stroke-width="1.5" style="paint-order: stroke;">${unicode}</text>`;
+                    // Slightly thicker stroke for better visibility at larger size
+                    svg += `<text x="${c * squareSize + squareSize / 2}" y="${r * squareSize + squareSize / 2}" font-size="${squareSize * 0.8}" text-anchor="middle" dominant-baseline="central" fill="${pieceColor}" stroke="${strokeColor}" stroke-width="1.5" style="paint-order: stroke;">${unicode}</text>`;
                 }
             });
         });
@@ -274,6 +253,7 @@ export const generateBoardImageForSharing = (fen: string): string => {
         return `data:image/svg+xml;base64,${base64Svg}`;
     } catch (e) {
         console.error("Failed to generate board image for FEN:", fen, e);
+        // Return a transparent 1x1 pixel gif as a fallback
         return "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
     }
 };
@@ -343,15 +323,12 @@ const detectTurnWithOCR = async (imageFile: File): Promise<PieceColor | null> =>
     }
 };
 
-/**
- * New: Uses OpenCV to find candidate marker shapes, squares them up, and sends them to Server 2.
- * @param imageFile The full cropped image (board + margins).
- * @returns The detected turn ('w' or 'b') or null.
- */
-const findAndAnalyzeTurnMarkersCV = async (imageFile: File): Promise<PieceColor | null> => {
+const findAndAnalyzeTurnMarkersCV = async (imageFile: File): Promise<{ turn: PieceColor | null, yoloResponse: any, yoloRequestPayload: any | null, shape_turn_detection_ms: number }> => {
     await window.cvReady;
     const cv = window.cv;
+    const startTime = performance.now();
     const mats: any[] = [];
+
     try {
         const imgElement = await fileToImage(imageFile);
         const src = cv.imread(imgElement);
@@ -371,67 +348,94 @@ const findAndAnalyzeTurnMarkersCV = async (imageFile: File): Promise<PieceColor 
         mats.push(hierarchy);
         cv.findContours(thresh, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
-        const marginWidth = src.cols * 0.15; // Search in the outer 15% margins
-        const minArea = 50; // Minimum pixel area to be considered a shape
-        const maxArea = src.cols * src.rows * 0.01; // Max 1% of total image area
+        const marginWidth = src.cols * 0.15;
+        const minArea = 50; 
+        const maxArea = (src.cols * src.rows) * 0.01;
 
         for (let i = 0; i < contours.size(); ++i) {
             const cnt = contours.get(i);
             const rect = cv.boundingRect(cnt);
+            const area = cv.contourArea(cnt);
             
-            // Filter criteria
             const isShapeInMargin = rect.x < marginWidth || rect.x + rect.width > src.cols - marginWidth;
-            const isShapeGoodSize = rect.width * rect.height > minArea && rect.width * rect.height < maxArea;
-            const aspectRatio = rect.width / rect.height;
-            const isShapeSquarish = aspectRatio > 0.7 && aspectRatio < 1.3;
+            const isShapeGoodSize = area > minArea && area < maxArea;
 
-            if (isShapeInMargin && isShapeGoodSize && isShapeSquarish) {
-                // We found a candidate. Crop it from the original color image.
-                const cropped = src.roi(rect);
+            if (isShapeInMargin && isShapeGoodSize) {
+                const peri = cv.arcLength(cnt, true);
+                const approx = new cv.Mat();
+                cv.approxPolyDP(cnt, approx, 0.04 * peri, true);
+
+                const isTriangle = approx.rows === 3;
+                const isQuadrilateral = approx.rows === 4;
+                const isCircleLike = approx.rows > 4;
                 
-                // "Square-up" the cropped image for the YOLO model
-                const size = Math.max(cropped.rows, cropped.cols);
-                const squareMat = new cv.Mat(size, size, cropped.type(), [255, 255, 255, 255]); // White background
-                const xOffset = Math.floor((size - cropped.cols) / 2);
-                const yOffset = Math.floor((size - cropped.rows) / 2);
-                const roi = squareMat.roi(new cv.Rect(xOffset, yOffset, cropped.cols, cropped.rows));
-                cropped.copyTo(roi);
-
-                // Convert the squared-up Mat to a File to send to the mock server
-                const tempCanvas = document.createElement('canvas');
-                cv.imshow(tempCanvas, squareMat);
-                const blob = await new Promise<Blob|null>(resolve => tempCanvas.toBlob(resolve, 'image/png'));
+                let isTargetShape = false;
+                if (isTriangle || (isQuadrilateral && (rect.width/rect.height) > 0.7 && (rect.width/rect.height) < 1.4) || (isCircleLike && (4 * Math.PI * area) / (peri * peri) > 0.75)) {
+                    isTargetShape = true;
+                }
                 
-                // Cleanup temp mats for this loop iteration
-                cropped.delete();
-                squareMat.delete();
-                roi.delete();
+                if (isTargetShape) {
+                    // This is our candidate shape. Process it for YOLO.
+                    // 1. Crop the thresholded image (white shape on black bg)
+                    const croppedThresh = thresh.roi(rect);
+                    mats.push(croppedThresh);
 
-                if (blob) {
-                    const markerFile = new File([blob], 'turn_marker.png', { type: 'image/png' });
-                    const { turn } = await analyzeTurnMarker(markerFile);
-                    if (turn) {
-                        cnt.delete();
-                        return turn; // Found a valid turn, exit early.
+                    // 2. Invert to get black shape on white bg
+                    const invertedCrop = new cv.Mat();
+                    cv.bitwise_not(croppedThresh, invertedCrop);
+                    mats.push(invertedCrop);
+                    
+                    // 3. Create a 640x640 white canvas
+                    const yoloSize = 640;
+                    const yoloCanvas = new cv.Mat(yoloSize, yoloSize, cv.CV_8UC1, new cv.Scalar(255));
+                    mats.push(yoloCanvas);
+                    
+                    // 4. Resize shape to fit canvas with padding
+                    const scale = Math.min(yoloSize / invertedCrop.cols, yoloSize / invertedCrop.rows) * 0.8;
+                    const dsize = new cv.Size(Math.round(invertedCrop.cols * scale), Math.round(invertedCrop.rows * scale));
+                    const resizedShape = new cv.Mat();
+                    cv.resize(invertedCrop, resizedShape, dsize, 0, 0, cv.INTER_AREA);
+                    mats.push(resizedShape);
+                    
+                    // 5. Create a mask from the resized shape (shape is black, so invert for mask)
+                    const mask = new cv.Mat();
+                    cv.threshold(resizedShape, mask, 127, 255, cv.THRESH_BINARY_INV);
+                    mats.push(mask);
+
+                    // 6. Paste onto the center of the canvas
+                    const xOffset = Math.floor((yoloSize - resizedShape.cols) / 2);
+                    const yOffset = Math.floor((yoloSize - resizedShape.rows) / 2);
+                    const roi = yoloCanvas.roi(new cv.Rect(xOffset, yOffset, resizedShape.cols, resizedShape.rows));
+                    resizedShape.copyTo(roi, mask); // Only copy the black pixels (the shape)
+                    mats.push(roi);
+
+                    // 7. Convert to file and send to server
+                    const tempCanvas = document.createElement('canvas');
+                    cv.imshow(tempCanvas, yoloCanvas);
+                    const blob = await new Promise<Blob|null>(resolve => tempCanvas.toBlob(resolve, 'image/jpeg', 0.95));
+                    
+                    if (blob) {
+                        const markerFile = new File([blob], 'turn_marker.jpg', { type: 'image/jpeg' });
+                        const { turn, yoloResponse, yoloRequestPayload } = await analyzeTurnMarker(markerFile);
+                        if (turn) {
+                            return { turn, yoloResponse, yoloRequestPayload, shape_turn_detection_ms: performance.now() - startTime };
+                        }
                     }
                 }
+                approx.delete();
             }
             cnt.delete();
         }
-        return null; // No valid turn marker found after checking all contours.
+        return { turn: null, yoloResponse: null, yoloRequestPayload: null, shape_turn_detection_ms: performance.now() - startTime };
     } catch(e) {
         console.error("OpenCV shape detection failed:", e);
-        return null;
+        return { turn: null, yoloResponse: null, yoloRequestPayload: null, shape_turn_detection_ms: performance.now() - startTime };
     } finally {
-        // Ensure all mats are deleted to prevent memory leaks
-        mats.forEach(mat => {
-            if (mat && !mat.isDeleted()) mat.delete();
-        });
+        mats.forEach(mat => { if (mat && !mat.isDeleted()) mat.delete(); });
     }
 };
 
-
-export const determineTurnFromImage = async (imageFile: File): Promise<{turn: PieceColor, ocr_turn_detection_ms: number | null, shape_turn_detection_ms: number | null }> => {
+export const determineTurnFromImage = async (imageFile: File): Promise<{turn: PieceColor, ocr_turn_detection_ms: number | null, shape_turn_detection_ms: number | null, yoloResponse: any | null, yoloRequestPayload: any | null }> => {
     let ocr_turn_detection_ms: number | null = null;
     let shape_turn_detection_ms: number | null = null;
     
@@ -442,22 +446,21 @@ export const determineTurnFromImage = async (imageFile: File): Promise<{turn: Pi
     
     if (ocrResult) {
         console.log(`Client-side turn detection: Found text '${ocrResult}' via OCR.`);
-        return { turn: ocrResult, ocr_turn_detection_ms, shape_turn_detection_ms };
+        return { turn: ocrResult, ocr_turn_detection_ms, shape_turn_detection_ms, yoloResponse: null, yoloRequestPayload: null };
     }
 
     // Priority 2: OpenCV + Server 2 for shape markers (squares, triangles, etc.)
-    const shapeStartTime = performance.now();
-    const shapeResult = await findAndAnalyzeTurnMarkersCV(imageFile);
-    shape_turn_detection_ms = performance.now() - shapeStartTime;
+    const { turn: shapeResult, yoloResponse, yoloRequestPayload, shape_turn_detection_ms: s_t_d_ms } = await findAndAnalyzeTurnMarkersCV(imageFile);
+    shape_turn_detection_ms = s_t_d_ms;
 
     if (shapeResult) {
         console.log(`Client-side turn detection: Found shape marker for '${shapeResult}' via OpenCV + Server 2.`);
-        return { turn: shapeResult, ocr_turn_detection_ms, shape_turn_detection_ms };
+        return { turn: shapeResult, ocr_turn_detection_ms, shape_turn_detection_ms, yoloResponse, yoloRequestPayload };
     }
     
     // Priority 3: Default to White if nothing is found
     console.log("Client-side turn detection: No markers found. Defaulting to White's turn.");
-    return { turn: 'w', ocr_turn_detection_ms, shape_turn_detection_ms };
+    return { turn: 'w', ocr_turn_detection_ms, shape_turn_detection_ms, yoloResponse: yoloResponse || null, yoloRequestPayload: yoloRequestPayload || null };
 };
 
 export const calculateIoU = (boxA: BoundingBox, boxB: BoundingBox): number => {
@@ -507,6 +510,7 @@ export const detectChessboardsCV = async (canvas: HTMLCanvasElement): Promise<Bo
             const cnt = contours.get(i);
             const peri = cv.arcLength(cnt, true);
             const approx = new cv.Mat();
+      
             cv.approxPolyDP(cnt, approx, 0.04 * peri, true);
 
             if (approx.rows === 4) {

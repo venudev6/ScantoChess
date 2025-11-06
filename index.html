@@ -19,6 +19,7 @@
     
     <!-- Local stylesheets for localhost compatibility -->
     <link rel="stylesheet" href="/styles/global.css">
+    <link rel="stylesheet" href="/styles/loader.css">
     <link rel="stylesheet" href="/components/ui/components.css">
     <link rel="stylesheet" href="/styles/layouts.css">
     <link rel="stylesheet" href="/components/ui/CapturedPieces.css">
@@ -43,6 +44,7 @@
     <link rel="stylesheet" href="/components/views/ProfileView.css">
     <link rel="stylesheet" href="/components/ui/PieceSetSelectorModal.css">
     <link rel="stylesheet" href="/components/ui/UpdatePrompt.css">
+    <link rel="stylesheet" href="/components/views/YoloDebugView.css">
 
     <!-- Google Identity Services Script -->
     <script src="https://accounts.google.com/gsi/client" async defer onload="onGoogleLibraryLoad()"></script>
@@ -59,6 +61,10 @@
             window.onOpenCvReady = () => {
                 if (window.cv) {
                     console.log('OpenCV.js loaded and ready.');
+                    const loader = document.getElementById('initial-loader');
+                    if (loader) {
+                        loader.style.display = 'none';
+                    }
                     resolve();
                 } else {
                     console.error('onOpenCvReady called but cv is not defined.');
@@ -121,6 +127,15 @@
 </script>
 </head>
 <body>
+    <div id="initial-loader">
+        <div class="loader-content">
+            <h2 class="main-title">Initializing Application...</h2>
+            <p class="subtitle">This may take a moment on your first visit.</p>
+            <div class="progress-bar">
+                <div class="progress-bar-value"></div>
+            </div>
+        </div>
+    </div>
     <!-- The root DOM element where the React application will be mounted. -->
     <div id="root">
         <!-- A simple loading indicator to show while the engine initializes. -->

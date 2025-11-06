@@ -37,7 +37,7 @@ export interface User {
  * Represents the current view or screen of the application.
  * Used as a state machine in the main App component.
  */
-export type AppState = 'initial' | 'camera' | 'screenCapture' | 'preview' | 'pdfViewer' | 'loading' | 'result' | 'solve' | 'error' | 'login' | 'register' | 'admin' | 'savedGames' | 'history' | 'profile';
+export type AppState = 'initial' | 'camera' | 'screenCapture' | 'preview' | 'pdfViewer' | 'loading' | 'result' | 'solve' | 'error' | 'login' | 'register' | 'admin' | 'savedGames' | 'history' | 'profile' | 'yoloDebug';
 
 /**
  * Represents the type of a chess piece (in lowercase).
@@ -145,6 +145,8 @@ export interface AnalysisDetails {
     };
     warpedImageDataUrl?: string;
     failureReason?: string;
+    yoloResponse?: any;
+    yoloRequestPayload?: { image: string };
 }
 
 /**

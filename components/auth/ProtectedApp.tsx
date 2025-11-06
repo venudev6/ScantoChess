@@ -19,10 +19,11 @@ import ErrorView from '../views/ErrorView';
 import SavedGamesView from '../views/SavedGamesView';
 import HistoryView from '../views/HistoryView';
 import ProfileView from '../views/ProfileView';
+import YoloDebugView from '../views/YoloDebugView';
 
 
 import { soundManager } from '../../lib/SoundManager';
-import { analyzeImagePosition } from '../../lib/gemini';
+import { analyzePosition } from '../../lib/fenService';
 import { authService, googleDriveService } from '../../lib/authService';
 import { useAppSettings } from '../../hooks/useAppSettings';
 import { usePdfManager } from '../../hooks/usePdfManager';
@@ -206,11 +207,74 @@ export const ProtectedApp = ({
     }, [setAppState, clearSelectedPdf]);
 
     // --- IMAGE & ANALYSIS WORKFLOW ---
+    const handleCropConfirm = async (file: File, clientProcessingTime: number) => {
+        setScanFailed(false);
+        setScanFailureMessage(null);
+        setAppState('loading');
+        
+        const totalStartTime = performance.now();
+    
+        try {
+            const [serverResult, turnResult] = await Promise.all([
+                analyzePosition(file),
+                determineTurnFromImage(file)
+            ]);
+
+            const { turn: clientSideTurn, ocr_turn_detection_ms, shape_turn_detection_ms, yoloResponse, yoloRequestPayload } = turnResult;
+
+            const total_scan_ms = performance.now() - totalStartTime;
+            const serverProcessingTime = serverResult.timings?.total_scan_ms ?? null;
+
+            const fenParts = serverResult.fen.split(' ');
+            const serverTurn = fenParts.length > 1 ? fenParts[1] : 'w';
+            fenParts[1] = clientSideTurn;
+            const correctedFen = fenParts.join(' ');
+            
+            console.log(`Turn detection: Server indicated '${serverTurn}', Client detected '${clientSideTurn}'. Using client's result.`);
+
+            const finalAnalysisResult: AnalysisResult = {
+                fen: correctedFen,
+                turn: clientSideTurn,
+                details: {
+                    ...serverResult.details,
+                    failureReason: serverResult.failureReason,
+                    yoloResponse,
+                    yoloRequestPayload,
+                    timingSummary: {
+                        ...serverResult.timings,
+                        total_scan_ms,
+                        ocr_turn_detection_ms,
+                        shape_turn_detection_ms,
+                    },
+                },
+                scanDuration: total_scan_ms / 1000,
+                clientProcessingTime: clientProcessingTime,
+                serverProcessingTime: serverProcessingTime,
+            };
+    
+            setAnalysisResult(finalAnalysisResult);
+    
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onloadend = () => {
+                setCroppedImageDataUrl(reader.result as string);
+            };
+            
+            onScanComplete();
+            setAppState('result');
+        } catch (e) {
+            const errorMessage = e instanceof Error ? e.message : String(e);
+            console.error("Analysis Pipeline Failed. Error:", errorMessage, e);
+            setScanFailureMessage(errorMessage);
+            setScanFailed(true);
+        }
+    };
+    
     const handleFileSelect = (file: File, origin: AppState) => {
         if (isGuestPastTrial) return onAuthRequired();
         setScanFlowOrigin(origin);
         setImageData(file);
-        setAppState('preview');
+        handleCropConfirm(file, 0);
     };
 
     const handlePdfSelect = async (file: File) => {
@@ -239,67 +303,6 @@ export const ProtectedApp = ({
             console.error("Failed to load sample image", e);
             setError("Could not load the sample image.");
             setAppState('error');
-        }
-    };
-
-    const handleCropConfirm = async (file: File, clientProcessingTime: number) => {
-        setScanFailed(false);
-        setScanFailureMessage(null);
-        setAppState('loading');
-        
-        const totalStartTime = performance.now();
-    
-        try {
-            const [serverResult, turnResult] = await Promise.all([
-                analyzeImagePosition(file),
-                determineTurnFromImage(file)
-            ]);
-
-            const { turn: clientSideTurn, ocr_turn_detection_ms, shape_turn_detection_ms } = turnResult;
-
-            const total_scan_ms = performance.now() - totalStartTime;
-            const serverProcessingTime = serverResult.timings?.total_scan_ms ?? null;
-
-            const fenParts = serverResult.fen.split(' ');
-            const serverTurn = fenParts.length > 1 ? fenParts[1] : 'w';
-            fenParts[1] = clientSideTurn;
-            const correctedFen = fenParts.join(' ');
-            
-            console.log(`Turn detection: Server indicated '${serverTurn}', Client detected '${clientSideTurn}'. Using client's result.`);
-
-            const finalAnalysisResult: AnalysisResult = {
-                fen: correctedFen,
-                turn: clientSideTurn,
-                details: {
-                    ...serverResult.details,
-                    failureReason: serverResult.failureReason,
-                    timingSummary: {
-                        ...serverResult.timings,
-                        total_scan_ms,
-                        ocr_turn_detection_ms,
-                        shape_turn_detection_ms,
-                    },
-                },
-                scanDuration: total_scan_ms / 1000,
-                clientProcessingTime: clientProcessingTime,
-                serverProcessingTime: serverProcessingTime,
-            };
-    
-            setAnalysisResult(finalAnalysisResult);
-    
-            const reader = new FileReader();
-            reader.readAsDataURL(file);
-            reader.onloadend = () => {
-                setCroppedImageDataUrl(reader.result as string);
-            };
-            
-            onScanComplete();
-            setAppState('result');
-        } catch (e) {
-            const errorMessage = e instanceof Error ? e.message : String(e);
-            console.error("Analysis Pipeline Failed. Error:", errorMessage, e);
-            setScanFailureMessage(errorMessage);
-            setScanFailed(true);
         }
     };
     
@@ -355,11 +358,11 @@ export const ProtectedApp = ({
             const totalStartTime = performance.now();
 
             const [serverResult, turnResult] = await Promise.all([
-                analyzeImagePosition(file, true),
+                analyzePosition(file, true),
                 determineTurnFromImage(file)
             ]);
 
-            const { turn: clientSideTurn, ocr_turn_detection_ms, shape_turn_detection_ms } = turnResult;
+            const { turn: clientSideTurn, ocr_turn_detection_ms, shape_turn_detection_ms, yoloResponse, yoloRequestPayload } = turnResult;
 
             const total_scan_ms = performance.now() - totalStartTime;
             const serverProcessingTime = serverResult.timings?.total_scan_ms ?? null;
@@ -376,6 +379,8 @@ export const ProtectedApp = ({
                 turn: clientSideTurn,
                 details: {
                     ...serverResult.details,
+                    yoloResponse,
+                    yoloRequestPayload,
                     timingSummary: {
                         ...serverResult.timings,
                         ocr_turn_detection_ms,
@@ -575,6 +580,8 @@ export const ProtectedApp = ({
                 return <HistoryView onGameSelect={handleHistorySelect} onBack={handleBack} />;
             case 'profile':
                 return <ProfileView onBack={() => setAppState(previousAppState)} />;
+            case 'yoloDebug':
+                return <YoloDebugView onBack={() => setAppState('initial')} />;
             case 'error':
                 return <ErrorView message={error || 'An unknown error occurred.'} onRetry={resetToInitial} />;
             default:

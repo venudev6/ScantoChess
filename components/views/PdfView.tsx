@@ -732,7 +732,6 @@ const PdfView: React.FC<PdfViewProps> = ({
         </div>
         <div className="pdf-toolbar-center">
             <div className={`pdf-toolbar-group ${isOptionsOpen ? 'dropdown-active' : ''}`}>
-                <button className="btn-icon" onClick={handleDeepScan} disabled={isDeepScanning} title={isPageScanned ? "Page Scanned" : "Deep Scan page for puzzles"}>{isDeepScanning ? <div className="spinner-small" /> : isPageScanned ? <CheckIcon/> : <DeepScanIcon />}</button>
                 <div className="options-menu-container" ref={optionsMenuRef}>
                     <button className="btn-icon" onClick={() => setIsOptionsOpen(o => !o)} title="View Options">
                         <OptionsIcon />
@@ -759,7 +758,9 @@ const PdfView: React.FC<PdfViewProps> = ({
             </div>
         </div>
         <div className="pdf-toolbar-right">
-            {/* Empty div for spacing balance */}
+            <button className={`btn-icon btn-icon-bare ${isPageScanned && !isDeepScanning ? 'completed-scan' : ''}`} onClick={handleDeepScan} disabled={isDeepScanning} title={isPageScanned ? "Page Scanned" : "Deep Scan page for puzzles"}>
+                {isDeepScanning ? <div className="spinner-small" /> : isPageScanned ? <CheckIcon/> : <DeepScanIcon />}
+            </button>
         </div>
       </div>
       <div className="pdf-body">

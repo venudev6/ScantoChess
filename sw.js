@@ -1,4 +1,4 @@
-const CACHE_NAME = 'scan-to-chess-v5';
+const CACHE_NAME = 'scan-to-chess-v6';
 // Add all local assets and key CDN assets to the cache
 const urlsToCache = [
   '/',
@@ -8,6 +8,7 @@ const urlsToCache = [
   '/dist/bundle.js',
   'https://pub-820795c92eeb4491bb7106d80626755b.r2.dev/best_mobile.onnx',
   '/styles/global.css',
+  '/styles/loader.css',
   '/styles/components.css',
   '/styles/layouts.css',
   '/components/ui/CapturedPieces.css',
@@ -32,6 +33,7 @@ const urlsToCache = [
   '/components/views/ProfileView.css',
   '/components/ui/PieceSetSelectorModal.css',
   '/components/ui/UpdatePrompt.css',
+  '/components/views/YoloDebugView.css',
   'https://aistudiocdn.com/react-image-crop@^11.0.10/dist/ReactCrop.css',
   'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Merriweather:wght@400;700&display=swap',
   'https://accounts.google.com/gsi/client',

@@ -74,16 +74,16 @@ export const analyzeTurnMarker = async (
 
 
 /**
- * Analyzes a chess position by sending the image to a backend server.
+ * Analyzes a chess position by sending the image to the custom FEN analysis server.
  * @param imageFile The image file of the chessboard.
  * @param isRetry A boolean to indicate if this is a rescan attempt.
  * @returns A promise that resolves with the analysis result from the server.
  */
-export const analyzeImagePosition = async (
+export const analyzePosition = async (
     imageFile: File,
     isRetry: boolean = false
 ): Promise<{ fen: string, turn: PieceColor, details: AnalysisDetails, timings: any, failureReason?: string }> => {
-    console.debug("--- Server Analysis Pipeline Started ---", { imageName: imageFile.name, isRetry });
+    console.debug("--- FEN Server Analysis Pipeline Started ---", { imageName: imageFile.name, isRetry });
     const startTime = performance.now();
     const timings: any = {};
 
@@ -138,7 +138,7 @@ export const analyzeImagePosition = async (
             }
         }
         
-        console.debug("--- Server Analysis Pipeline Finished ---");
+        console.debug("--- FEN Server Analysis Pipeline Finished ---");
         
         const details: AnalysisDetails = {
             ...(data.details || {}),
@@ -161,7 +161,7 @@ export const analyzeImagePosition = async (
         };
 
     } catch (error) {
-        console.error("Server analysis pipeline failed:", error);
+        console.error("FEN Server analysis pipeline failed:", error);
         throw error; // Re-throw to be caught by the calling component (ProtectedApp.tsx)
     }
 };

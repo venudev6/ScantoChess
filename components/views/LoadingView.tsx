@@ -18,10 +18,11 @@ interface LoadingViewProps {
 }
 
 const loadingSteps = [
-    "Compressing and uploading image",
-    "Server is detecting the board",
-    "Server is identifying piece positions",
-    "Finalizing analysis...",
+    { message: "Preparing image on your device...", duration: 2000 },
+    { message: "Uploading for analysis...", duration: 3000 },
+    { message: "Detecting board and pieces...", duration: 8000 },
+    { message: "Detecting whose turn it is (server may be starting...)", duration: 20000 },
+    { message: "Finalizing and verifying position...", duration: 100000 }, // Long duration to stay here
 ];
 
 
@@ -36,18 +37,28 @@ const LoadingView = ({ onCancel, scanFailed, onRetry, imageFile, errorMessage, o
 
     useEffect(() => {
         if (!scanFailed) {
-            setCurrentStepIndex(0); // Reset on view load
-            const interval = setInterval(() => {
-                setCurrentStepIndex(prev => {
-                    // Stop advancing once we reach the last step
-                    if (prev < loadingSteps.length - 1) {
-                        return prev + 1;
-                    }
-                    return prev;
-                });
-            }, 3500); // This duration feels more realistic for a multi-second process
+            setCurrentStepIndex(0);
+            // FIX: Cannot find namespace 'NodeJS'. Replaced NodeJS.Timeout with the more portable ReturnType<typeof setTimeout> to correctly type the return value of setTimeout in a browser environment.
+            let timeouts: ReturnType<typeof setTimeout>[] = [];
+            
+            const scheduleNextStep = (index: number) => {
+                if (index >= loadingSteps.length) return;
+                
+                const timeout = setTimeout(() => {
+                    setCurrentStepIndex(index);
+                    scheduleNextStep(index + 1);
+                }, loadingSteps[index].duration);
+                timeouts.push(timeout);
+            };
+            
+            // Start the sequence after a brief moment
+            const initialTimeout = setTimeout(() => {
+                 setCurrentStepIndex(0);
+                 scheduleNextStep(1);
+            }, 100);
+            timeouts.push(initialTimeout);
 
-            return () => clearInterval(interval);
+            return () => timeouts.forEach(clearTimeout);
         }
     }, [scanFailed]);
 
@@ -112,10 +123,13 @@ const LoadingView = ({ onCancel, scanFailed, onRetry, imageFile, errorMessage, o
                                      <CheckIcon/>
                                      <div className="step-spinner"></div>
                                  </div>
-                                 <span>{step}</span>
+                                 <span>{step.message}</span>
                             </li>
                         ))}
                     </ul>
+                    <p className="loading-message" style={{ maxWidth: '380px', lineHeight: 1.5, marginTop: '1rem' }}>
+                        Please be patient. The turn detection server (YOLOv8) may be in a cold start, which can take up to a minute.
+                    </p>
                     <button className="btn btn-secondary" onClick={onCancel}>Cancel</button>
                 </>
             )}
