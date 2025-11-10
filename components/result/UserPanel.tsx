@@ -7,6 +7,7 @@ import { UserCircleIcon, LogoutIcon, AccountIcon, BookmarkIcon, HistoryIcon, Set
 import type { User, AnalysisDetails } from '../../lib/types';
 import { useAppSettings } from '../../hooks/useAppSettings';
 import { PieceSetSelectorModal } from '../ui/PieceSetSelectorModal';
+import { Logo } from '../ui/Logo';
 import './UserPanel.css';
 
 type AppSettings = ReturnType<typeof useAppSettings>;
@@ -34,9 +35,11 @@ interface UserPanelProps {
     isThinking?: boolean;
     playerSide?: 'w' | 'b' | null;
     turn?: 'w' | 'b';
+    onSettingsClick?: () => void;
+    onHome?: () => void;
 }
 
-const UserPanel = ({ user, isLoggedIn, onLogout, onAdminPanelClick, onSavedGamesClick, onHistoryClick, onProfileClick, onLoginClick, appSettings, scanDuration, clientProcessingTime, serverProcessingTime, analysisDetails, debugLog, bestMove, displayMode, isEngineReady, isThinking, playerSide, turn }: UserPanelProps) => {
+const UserPanel = ({ user, isLoggedIn, onLogout, onAdminPanelClick, onSavedGamesClick, onHistoryClick, onProfileClick, onLoginClick, appSettings, scanDuration, clientProcessingTime, serverProcessingTime, analysisDetails, debugLog, bestMove, displayMode, isEngineReady, isThinking, playerSide, turn, onSettingsClick, onHome }: UserPanelProps) => {
     const [openSection, setOpenSection] = useState<OpenSection>(null);
     const [isPieceSetModalOpen, setIsPieceSetModalOpen] = useState(false);
     const debugLogRef = useRef<HTMLDivElement>(null);
@@ -95,7 +98,7 @@ const UserPanel = ({ user, isLoggedIn, onLogout, onAdminPanelClick, onSavedGames
     if (!isLoggedIn || !user) {
         return (
             <aside className="user-panel guest-panel">
-                <div className="user-panel-header">
+                <div className="user-panel-header" onClick={onLoginClick}>
                     <div className="user-avatar"><UserCircleIcon /></div>
                     <div className="user-info">
                         <span className="user-email">Guest User</span>
@@ -114,6 +117,11 @@ const UserPanel = ({ user, isLoggedIn, onLogout, onAdminPanelClick, onSavedGames
 
     return (
         <aside className={`user-panel ${displayMode}-panel`}>
+            {displayMode === 'compact' && onHome && (
+                <button className="btn-icon-bare home-logo-btn" onClick={onHome} title="Go to Home Screen" aria-label="Go to Home Screen">
+                    <Logo />
+                </button>
+            )}
             <PieceSetSelectorModal isOpen={isPieceSetModalOpen} onClose={() => setIsPieceSetModalOpen(false)} appSettings={appSettings} />
             <button className="user-panel-header" onClick={onProfileClick} title="View your profile">
                 <div className="user-avatar">
@@ -124,6 +132,12 @@ const UserPanel = ({ user, isLoggedIn, onLogout, onAdminPanelClick, onSavedGames
                     <span className={`role-badge role-${user.role}`}>{user.role}</span>
                 </div>
             </button>
+
+            {displayMode === 'compact' && onSettingsClick && (
+                <button className="btn-icon-bare settings-toggle-btn" onClick={onSettingsClick} title="Open Settings">
+                    <SettingsIcon />
+                </button>
+            )}
             
             <div className="user-panel-scroll-container">
                 {displayMode === 'full' && (

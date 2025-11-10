@@ -35,13 +35,17 @@ export const usePdfDeepScan = (pdfDoc: pdfjsLib.PDFDocumentProxy | null, pdfId: 
         isCancelledRef.current = true;
         setIsDeepScanning(false); // Immediately update UI
     }, []);
+    
+    const onCVProgress = useCallback((message: string) => {
+        setScanProgress(prev => ({ ...prev, message }));
+    }, []);
 
     const startDeepScan = useCallback(async (pageNum: number, onScanComplete: (puzzles: DetectedPuzzle[]) => void) => {
         if (!pdfDoc || isDeepScanning) return;
 
         setIsDeepScanning(true);
         isCancelledRef.current = false;
-        setScanProgress({ current: 0, total: 0, message: 'Detecting chessboards...' });
+        setScanProgress({ current: 0, total: 0, message: 'Preparing PDF page...' });
 
         let page: pdfjsLib.PDFPageProxy | null = null;
         try {
@@ -49,7 +53,7 @@ export const usePdfDeepScan = (pdfDoc: pdfjsLib.PDFDocumentProxy | null, pdfId: 
             const pageCanvas = await renderPageToCanvas(page);
             if (isCancelledRef.current) { page.cleanup(); return; }
 
-            const tightBoxes = await detectChessboardsCV(pageCanvas);
+            const tightBoxes = await detectChessboardsCV(pageCanvas, onCVProgress);
             if (isCancelledRef.current) { page.cleanup(); return; }
             
             if (tightBoxes.length === 0) {
@@ -68,8 +72,10 @@ export const usePdfDeepScan = (pdfDoc: pdfjsLib.PDFDocumentProxy | null, pdfId: 
                 const newHeight = Math.min(1 - newY, box.height + (PADDING_PERCENT * 2));
                 return { x: newX, y: newY, width: newWidth, height: newHeight };
             });
-
-            setScanProgress({ current: 0, total: expandedBoxes.length, message: `Found ${expandedBoxes.length} potential puzzles. Analyzing...` });
+            
+            const puzzleCount = tightBoxes.length;
+            const findingMessage = `Found ${puzzleCount} potential puzzle${puzzleCount === 1 ? '' : 's'}. Analyzing...`;
+            setScanProgress({ current: 0, total: puzzleCount, message: findingMessage });
             
             const puzzlePromises = expandedBoxes.map(async (expandedBox, i) => {
                 if (isCancelledRef.current) return null;
@@ -121,7 +127,8 @@ export const usePdfDeepScan = (pdfDoc: pdfjsLib.PDFDocumentProxy | null, pdfId: 
 
             await db.savePdfPuzzles({ pdfId, page: pageNum, puzzles: allPuzzles });
             const validPuzzlesCount = allPuzzles.filter(p => p.fen).length;
-            setScanProgress({ current: allPuzzles.length, total: allPuzzles.length, message: `Scan complete! Found ${validPuzzlesCount} valid puzzles.` });
+            const completeMessage = `Scan complete! Found ${validPuzzlesCount} valid puzzle${validPuzzlesCount === 1 ? '' : 's'}.`;
+            setScanProgress({ current: allPuzzles.length, total: allPuzzles.length, message: completeMessage });
             
             setTimeout(() => onScanComplete(allPuzzles), 1500);
 
@@ -134,7 +141,7 @@ export const usePdfDeepScan = (pdfDoc: pdfjsLib.PDFDocumentProxy | null, pdfId: 
                 setTimeout(() => setIsDeepScanning(false), 2000);
             }
         }
-    }, [pdfDoc, pdfId, isDeepScanning]);
+    }, [pdfDoc, pdfId, isDeepScanning, onCVProgress]);
 
     return {
         isDeepScanning,

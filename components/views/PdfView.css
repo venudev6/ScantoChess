@@ -5,10 +5,10 @@
 
 /* container & toolbar */
 .pdf-viewer-container { display:flex; flex-direction:column; height:100%; width:100%; position:relative; background:#f3f4f6; overflow:hidden; }
-.pdf-toolbar { position:sticky; top:0; z-index:60; display:flex; align-items:center; justify-content:center; padding:0.5rem 1rem; background:#fff; border-bottom:1px solid var(--border-color); box-shadow:0 2px 4px rgba(0,0,0,0.04); position: relative; }
-.pdf-toolbar-left { position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); display:flex; align-items:center; gap:0.75rem; }
-.pdf-toolbar-right { position: absolute; right: 1rem; top: 50%; transform: translateY(-50%); display:flex; align-items:center; gap:0.75rem; }
-.pdf-toolbar-center { flex:1; justify-content:center; display:flex; align-items:center; gap:0.75rem;}
+.pdf-toolbar { position:sticky; top:0; z-index:60; display:flex; align-items:center; justify-content:space-between; padding:0.5rem 1rem; background:#fff; border-bottom:1px solid var(--border-color); box-shadow:0 2px 4px rgba(0,0,0,0.04); }
+.pdf-toolbar-left { display:flex; align-items:center; gap:0.75rem; }
+.pdf-toolbar-right { display:flex; align-items:center; gap:0.75rem; }
+.pdf-toolbar-center { justify-content:center; display:flex; align-items:center; gap:0.75rem;}
 
 /* Modern Button Groups */
 .pdf-toolbar-group {
@@ -24,6 +24,7 @@
 /* Allow the dropdown to be visible when its group is active */
 .pdf-toolbar-group.dropdown-active {
     overflow: visible;
+    position: relative; /* Anchor for the dropdown */
 }
 
 .pdf-toolbar-group > .btn-icon,
@@ -63,7 +64,8 @@
 .options-dropdown {
     position: absolute;
     top: calc(100% + 8px);
-    right: 0;
+    left: 50%;
+    transform: translateX(-50%);
     background-color: #fff;
     border-radius: 0.5rem;
     box-shadow: 0 4px 12px rgba(0,0,0,0.1);
@@ -321,56 +323,99 @@
 }
 
 @media (max-width: 768px) {
-  .pdf-toolbar {
-    padding: 0.5rem;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-    justify-content: center;
-    height: auto;
+  .options-dropdown {
+      left: 0; /* On mobile, button is on the left of its group */
+      right: auto;
+      transform: none;
+      animation: none; /* Remove jumpy animation */
   }
-
-  .pdf-toolbar-left, .pdf-toolbar-right {
-    position: static;
-    transform: none;
+  .pdf-toolbar {
+    padding: 0.25rem;
+    gap: 0.25rem;
+    flex-wrap: nowrap; /* Force single line */
+    justify-content: space-between;
+    height: auto;
+    align-items: center;
   }
   
-  .pdf-toolbar-left, .pdf-toolbar-right {
-    flex-basis: auto;
-    flex-grow: 1;
-  }
-
+  .pdf-toolbar-left,
   .pdf-toolbar-right {
-    justify-content: flex-end; /* Align to the right */
+    flex-shrink: 0;
   }
 
   .pdf-toolbar-center {
-    order: -1; /* Move center group to the top row on wrap */
-    flex-basis: 100%;
-  }
-
-  .pdf-toolbar-group {
-    flex-shrink: 1;
+    order: 0; 
+    flex-basis: auto;
+    flex-shrink: 1; /* Allow center group to shrink to fit */
     min-width: 0;
+    justify-content: center;
+    gap: 0.25rem;
   }
 
-  .pdf-toolbar-group > .btn-icon,
-  .pdf-toolbar-group > .page-input-container,
-  .pdf-toolbar-group > .options-menu-container {
-      height: 38px;
-  }
-
-  .pdf-toolbar-group .btn-icon {
-      width: 40px;
+  /* Make button groups invisible on mobile */
+  .pdf-toolbar-group {
+    background: none;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+    margin: 0;
+    align-items: center;
   }
   
+  /* Hide the dedicated zoom controls on mobile; they are in the options menu */
+  .zoom-controls-group {
+    display: none;
+  }
+  
+  /* Remove separator lines */
+  .pdf-toolbar-group > *:not(:last-child) {
+    border-right: none;
+  }
+
+  /* Make all buttons inside groups look like bare icon buttons */
+  .pdf-toolbar-group .btn-icon,
+  .pdf-toolbar .btn-icon {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    color: var(--text-muted-color);
+    width: 36px; /* Smaller buttons */
+    height: 36px;
+  }
+  .pdf-toolbar .btn-icon-bare {
+    width: 36px;
+    height: 36px;
+  }
+
+  .pdf-toolbar-group .btn-icon:hover:not(:disabled),
+  .pdf-toolbar .btn-icon:hover:not(:disabled) {
+    background-color: #e5e7eb;
+    border-radius: 50%;
+    color: var(--text-color);
+  }
+
+  /* Ensure consistent height and remove any residual group styling */
+  .pdf-toolbar-group > .btn-icon,
+  .pdf-toolbar-group > .page-input-container,
+  .pdf-toolbar .btn-icon-bare,
+  .pdf-toolbar .btn-icon {
+      height: 36px;
+  }
+
+  /* Re-style the page navigator to be more compact */
   .page-input-container {
-    padding: 0 0.25rem;
+    background-color: #f3f4f6;
+    border: 1px solid var(--border-color);
+    border-radius: 9999px; /* Pill shape */
+    padding: 0 0.4rem;
   }
+  
   .page-input {
-    width: 3ch;
+      width: 3ch; /* Shrink input width */
+      font-size: 0.9rem;
   }
-   .pdf-toolbar .btn-icon svg {
-    width: 20px;
-    height: 20px;
+  
+  .page-total {
+      font-size: 0.85rem;
   }
 }

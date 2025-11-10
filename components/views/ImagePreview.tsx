@@ -4,7 +4,7 @@
 */
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BackIcon } from '../ui/Icons';
-import { analyzeImagePosition } from '../../lib/gemini';
+import { analyzePosition } from '../../lib/fenService';
 import { detectChessboardsCV, determineTurnFromImage, expandBox } from '../../lib/utils';
 import type { DetectedPuzzle, BoundingBox } from '../../lib/types';
 import './ImagePreview.css';
@@ -12,6 +12,7 @@ import './ImagePreview.css';
 interface ImagePreviewProps {
     imageFile: File;
     onPuzzleSelect: (fen: string) => void;
+    onMultiPuzzleFound: (puzzles: DetectedPuzzle[], imageFile: File) => void;
     onBack: () => void;
 }
 
@@ -45,24 +46,28 @@ const canvasCropToFile = async (
 
 /**
  * A view that automatically performs a deep scan on an uploaded image to find
- * all chess puzzles, displaying interactive overlays for each one found.
+ * all chess puzzles, analyzing them and displaying interactive overlays.
  */
-const ImagePreview = ({ imageFile, onPuzzleSelect, onBack }: ImagePreviewProps) => {
+const ImagePreview = ({ imageFile, onPuzzleSelect, onMultiPuzzleFound, onBack }: ImagePreviewProps) => {
     const [imgSrc, setImgSrc] = useState('');
-    const [scanState, setScanState] = useState<'idle' | 'scanning' | 'done' | 'error'>('idle');
+    const [scanState, setScanState] = useState<'scanning' | 'analyzing' | 'done' | 'error'>('scanning');
     const [scanProgress, setScanProgress] = useState({ current: 0, total: 0, message: '' });
     const [scanError, setScanError] = useState<string | null>(null);
     const [detectedPuzzles, setDetectedPuzzles] = useState<DetectedPuzzle[]>([]);
     const [aspectRatio, setAspectRatio] = useState<number | undefined>();
+    const imageCanvasRef = useRef<HTMLCanvasElement | null>(null);
+    const scanHasRun = useRef(false);
+    const isCancelledRef = useRef(false);
+
+    const onCVProgress = useCallback((message: string) => {
+        setScanProgress(prev => ({ ...prev, message }));
+    }, []);
 
     const scanImage = useCallback(async () => {
         if (!imgSrc) return;
 
         setScanState('scanning');
-        setScanProgress({ current: 0, total: 0, message: 'Detecting chessboards...' });
-        setDetectedPuzzles([]);
-        setScanError(null);
-        setAspectRatio(undefined);
+        setScanProgress({ current: 0, total: 0, message: 'Preparing image...' });
         
         const img = new Image();
         const loadPromise = new Promise<void>((resolve, reject) => { 
@@ -70,6 +75,7 @@ const ImagePreview = ({ imageFile, onPuzzleSelect, onBack }: ImagePreviewProps) 
             img.onerror = reject;
         });
         img.src = imgSrc;
+
         try {
             await loadPromise;
         } catch (e) {
@@ -78,12 +84,14 @@ const ImagePreview = ({ imageFile, onPuzzleSelect, onBack }: ImagePreviewProps) 
             return;
         }
 
+        if (isCancelledRef.current) return;
+
         setAspectRatio(img.naturalWidth / img.naturalHeight);
 
-        const canvas = document.createElement('canvas');
-        canvas.width = img.naturalWidth;
-        canvas.height = img.naturalHeight;
-        const ctx = canvas.getContext('2d');
+        imageCanvasRef.current = document.createElement('canvas');
+        imageCanvasRef.current.width = img.naturalWidth;
+        imageCanvasRef.current.height = img.naturalHeight;
+        const ctx = imageCanvasRef.current.getContext('2d');
         if (!ctx) {
             setScanState('error');
             setScanError('Could not create canvas context.');
@@ -92,50 +100,73 @@ const ImagePreview = ({ imageFile, onPuzzleSelect, onBack }: ImagePreviewProps) 
         ctx.drawImage(img, 0, 0);
 
         try {
-            const tightBoxes = await detectChessboardsCV(canvas);
+            const tightBoxes = await detectChessboardsCV(imageCanvasRef.current, onCVProgress);
+            
+            if (isCancelledRef.current) return;
             
             if (tightBoxes.length === 0) {
                 setScanProgress({ current: 0, total: 0, message: 'No chessboards found.' });
                 setTimeout(() => setScanState('done'), 1500);
                 return;
             }
-
-            const PADDING_PERCENT = 0.04;
-            const expandedBoxes = tightBoxes.map(box => expandBox(box, PADDING_PERCENT));
             
-            setScanProgress({ current: 0, total: expandedBoxes.length, message: `Found ${expandedBoxes.length} puzzle(s). Analyzing...` });
+            setScanState('analyzing');
+            const boardCount = tightBoxes.length;
+            const message = `Found ${boardCount} board${boardCount === 1 ? '' : 's'}. Analyzing...`;
+            setScanProgress({ current: 0, total: boardCount, message });
 
-            const puzzlePromises = expandedBoxes.map(async (box, i) => {
-                const puzzleFile = await canvasCropToFile(canvas, box, `puzzle_${i}.webp`);
-                if (!puzzleFile) return null;
+
+            const puzzlePromises = tightBoxes.map(async (box, i) => {
+                if (isCancelledRef.current) return null;
                 
+                const PADDING_PERCENT = 0.04;
+                const expandedBox = expandBox(box, PADDING_PERCENT);
+                const puzzleFile = await canvasCropToFile(imageCanvasRef.current!, expandedBox, `puzzle_${i}.webp`);
+                if (!puzzleFile) return { boundingBox: box, fen: '' };
+
                 try {
                     const [fenResult, turnResult] = await Promise.all([
-                        analyzeImagePosition(puzzleFile),
+                        analyzePosition(puzzleFile),
                         determineTurnFromImage(puzzleFile)
                     ]);
+                    
+                    if (isCancelledRef.current) return null;
 
-                    setScanProgress(prev => ({ ...prev, current: prev.current + 1, message: `Analyzing puzzle ${prev.current + 1} of ${expandedBoxes.length}...`}));
+                    setScanProgress(prev => ({ ...prev, current: prev.current + 1, message: `Analyzing board ${prev.current + 1} of ${tightBoxes.length}...` }));
 
                     if (fenResult.fen && !fenResult.failureReason) {
                         const { turn: clientTurn } = turnResult;
                         const fenParts = fenResult.fen.split(' ');
                         fenParts[1] = clientTurn;
                         const correctedFen = fenParts.join(' ');
-                        return { boundingBox: tightBoxes[i], fen: correctedFen };
+                        return { boundingBox: box, fen: correctedFen };
                     }
                 } catch (e) {
                     console.warn(`Analysis failed for puzzle ${i + 1}`, e);
                     setScanProgress(prev => ({ ...prev, current: prev.current + 1 }));
                 }
-                // Return a puzzle with an empty FEN on failure to still show an overlay
-                return { boundingBox: tightBoxes[i], fen: '' };
+                return { boundingBox: box, fen: '' }; // Placeholder on failure
             });
 
-            const results = (await Promise.all(puzzlePromises)).filter(p => p !== null) as DetectedPuzzle[];
-            setDetectedPuzzles(results);
-            const validPuzzles = results.filter(p => p.fen).length;
-            setScanProgress({ current: results.length, total: results.length, message: `Scan complete! Found ${validPuzzles} valid puzzle(s).` });
+            const allPuzzles = (await Promise.all(puzzlePromises)).filter(p => p !== null) as DetectedPuzzle[];
+            const validPuzzles = allPuzzles.filter(p => p.fen);
+            
+            if (isCancelledRef.current) return;
+            
+            if (validPuzzles.length === 1) {
+                onPuzzleSelect(validPuzzles[0].fen);
+                return;
+            }
+
+            if (validPuzzles.length > 1) {
+                onMultiPuzzleFound(validPuzzles, imageFile);
+            }
+            
+            setDetectedPuzzles(validPuzzles);
+            const foundCount = validPuzzles.length;
+            const completeMessage = foundCount > 0 ? `Scan complete! Click a puzzle to begin.` : 'Could not analyze any boards.';
+
+            setScanProgress({ current: allPuzzles.length, total: allPuzzles.length, message: completeMessage });
             setTimeout(() => setScanState('done'), 1000);
 
         } catch (error) {
@@ -143,25 +174,30 @@ const ImagePreview = ({ imageFile, onPuzzleSelect, onBack }: ImagePreviewProps) 
             setScanError(error instanceof Error ? error.message : 'An unknown error occurred during scan.');
             setScanState('error');
         }
-    }, [imgSrc]);
+    }, [imgSrc, onCVProgress, onPuzzleSelect, onMultiPuzzleFound, imageFile]);
 
     useEffect(() => {
         const reader = new FileReader();
         reader.onload = e => setImgSrc(e.target?.result as string);
         reader.readAsDataURL(imageFile);
+        
+        // Cleanup function for when the component unmounts
+        return () => {
+            isCancelledRef.current = true;
+        };
     }, [imageFile]);
 
     useEffect(() => {
-        if (imgSrc) {
+        // Guard against React Strict Mode's double-invocation in development
+        if (imgSrc && !scanHasRun.current) {
+            scanHasRun.current = true;
             scanImage();
         }
     }, [imgSrc, scanImage]);
     
-    const handlePuzzleClick = (puzzle: DetectedPuzzle) => {
-        if (puzzle.fen) {
-            onPuzzleSelect(puzzle.fen);
-        } else {
-            alert("This puzzle could not be analyzed. Please try a different image.");
+    const handlePuzzleClick = (fen: string) => {
+        if (fen) {
+            onPuzzleSelect(fen);
         }
     };
 
@@ -177,17 +213,18 @@ const ImagePreview = ({ imageFile, onPuzzleSelect, onBack }: ImagePreviewProps) 
                     aspectRatio: aspectRatio,
                 }}
             >
-                {scanState === 'scanning' && (
+                {(scanState === 'scanning' || scanState === 'analyzing') && (
                     <div className="scan-overlay">
                         <div className="spinner" />
                         <p>{scanProgress.message}</p>
                         {scanProgress.total > 0 && <progress value={scanProgress.current} max={scanProgress.total} />}
+                        <button className="btn btn-secondary" onClick={onBack}>Cancel</button>
                     </div>
                 )}
                 
                 {scanState === 'done' && detectedPuzzles.length === 0 && (
                     <div className="scan-overlay">
-                        <p>No chessboards were found in this image.</p>
+                        <p>No valid chessboards were found in this image.</p>
                     </div>
                 )}
 
@@ -202,7 +239,7 @@ const ImagePreview = ({ imageFile, onPuzzleSelect, onBack }: ImagePreviewProps) 
                 {scanState === 'done' && detectedPuzzles.map((puzzle, index) => {
                     const uiBox = expandBox(puzzle.boundingBox, 0.01);
                     return (
-                        <div 
+                        <button 
                             key={index} 
                             className="puzzle-overlay" 
                             style={{ 
@@ -211,14 +248,14 @@ const ImagePreview = ({ imageFile, onPuzzleSelect, onBack }: ImagePreviewProps) 
                                 width: `${uiBox.width * 100}%`, 
                                 height: `${uiBox.height * 100}%` 
                             }} 
-                            onClick={() => handlePuzzleClick(puzzle)}
-                            title={puzzle.fen ? "Click to analyze this puzzle" : "Analysis failed for this puzzle"}
+                            onClick={() => handlePuzzleClick(puzzle.fen)}
+                            title={puzzle.fen ? "Click to analyze this puzzle" : "Analysis failed for this area"}
                         >
                             <span className="corner-marker top-left"></span>
                             <span className="corner-marker top-right"></span>
                             <span className="corner-marker bottom-left"></span>
                             <span className="corner-marker bottom-right"></span>
-                        </div>
+                        </button>
                     );
                 })}
             </div>

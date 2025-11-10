@@ -73,6 +73,7 @@ export const imageToBase64 = (file: File): Promise<string> => {
   });
 };
 
+// FIX: Updated function to accept an optional crop parameter.
 export const resizeAndExportImage = (
     canvas: HTMLCanvasElement,
     options: {
@@ -80,14 +81,29 @@ export const resizeAndExportImage = (
         type: 'image/webp' | 'image/jpeg' | 'image/png',
         quality: number,
         fileName: string
+    },
+    crop?: {
+      x: number,
+      y: number,
+      width: number,
+      height: number
     }
 ): Promise<File | null> => {
     return new Promise((resolve) => {
         const { maxDimension, type, quality, fileName } = options;
-        const { width: originalWidth, height: originalHeight } = canvas;
+        
+        const sourceX = crop ? crop.x : 0;
+        const sourceY = crop ? crop.y : 0;
+        const sourceWidth = crop ? crop.width : canvas.width;
+        const sourceHeight = crop ? crop.height : canvas.height;
 
-        let targetWidth = originalWidth;
-        let targetHeight = originalHeight;
+        if (sourceWidth <= 0 || sourceHeight <= 0) {
+            resolve(null);
+            return;
+        }
+
+        let targetWidth = sourceWidth;
+        let targetHeight = sourceHeight;
 
         if (targetWidth > maxDimension || targetHeight > maxDimension) {
             if (targetWidth > targetHeight) {
@@ -109,7 +125,7 @@ export const resizeAndExportImage = (
             return;
         }
 
-        ctx.drawImage(canvas, 0, 0, originalWidth, originalHeight, 0, 0, targetWidth, targetHeight);
+        ctx.drawImage(canvas, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, targetWidth, targetHeight);
 
         resizeCanvas.toBlob(
             (blob) => {
@@ -216,12 +232,6 @@ export const generateBoardThumbnail = (fen: string): string => {
     }
 };
 
-// FIX: Add missing generateBoardImageForSharing function.
-/**
- * Generates a larger SVG data URL for a given FEN, suitable for sharing.
- * @param fen The FEN string of the board position.
- * @returns A base64 data URL for the SVG image.
- */
 export const generateBoardImageForSharing = (fen: string): string => {
     try {
         const { board } = fenToBoardState(fen);
@@ -477,69 +487,121 @@ export const calculateIoU = (boxA: BoundingBox, boxB: BoundingBox): number => {
     return unionArea > 0 ? interArea / unionArea : 0;
 };
 
-export const detectChessboardsCV = async (canvas: HTMLCanvasElement): Promise<BoundingBox[]> => {
+export const detectChessboardsCV = async (
+    canvas: HTMLCanvasElement, 
+    onProgress?: (message: string) => void
+): Promise<BoundingBox[]> => {
     await window.cvReady;
     const cv = window.cv;
-    const mats: any[] = [];
-    try {
-        const src = cv.imread(canvas);
-        mats.push(src);
+    
+    // Inner function to process a single canvas/image scale
+    const processScale = (scaleCanvas: HTMLCanvasElement): BoundingBox[] => {
+        const mats: any[] = [];
+        try {
+            const src = cv.imread(scaleCanvas);
+            mats.push(src);
 
-        const gray = new cv.Mat();
-        mats.push(gray);
-        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
+            const gray = new cv.Mat();
+            mats.push(gray);
+            cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
 
-        const blurred = new cv.Mat();
-        mats.push(blurred);
-        cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0, 0, cv.BORDER_DEFAULT);
+            // 1. CLAHE for contrast enhancement
+            const clahe = new cv.CLAHE(2.0, new cv.Size(8, 8));
+            const claheMat = new cv.Mat();
+            clahe.apply(gray, claheMat);
+            mats.push(claheMat);
+            mats.push(clahe);
 
-        const canny = new cv.Mat();
-        mats.push(canny);
-        cv.Canny(blurred, canny, 50, 150, 3, false);
+            // 2. Gaussian Blur for noise reduction
+            const blurred = new cv.Mat();
+            mats.push(blurred);
+            cv.GaussianBlur(claheMat, blurred, new cv.Size(3, 3), 0, 0, cv.BORDER_DEFAULT);
 
-        const contours = new cv.MatVector();
-        mats.push(contours);
-        const hierarchy = new cv.Mat();
-        mats.push(hierarchy);
-        cv.findContours(canny, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+            // 3. Adaptive Thresholding to get binary image
+            const thresh = new cv.Mat();
+            mats.push(thresh);
+            cv.adaptiveThreshold(blurred, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 11, 2);
 
-        const detectedBoxes: BoundingBox[] = [];
-        const minArea = (src.cols * src.rows) * 0.01;
+            // 4. Morphological Closing to fill gaps
+            const kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(3, 3));
+            mats.push(kernel);
+            const closed = new cv.Mat();
+            mats.push(closed);
+            cv.morphologyEx(thresh, closed, cv.MORPH_CLOSE, kernel, new cv.Point(-1, -1), 2);
 
-        for (let i = 0; i < contours.size(); ++i) {
-            const cnt = contours.get(i);
-            const peri = cv.arcLength(cnt, true);
-            const approx = new cv.Mat();
-      
-            cv.approxPolyDP(cnt, approx, 0.04 * peri, true);
+            // 5. Find Contours
+            const contours = new cv.MatVector();
+            mats.push(contours);
+            const hierarchy = new cv.Mat();
+            mats.push(hierarchy);
+            cv.findContours(closed, contours, hierarchy, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE);
 
-            if (approx.rows === 4) {
-                const area = cv.contourArea(approx);
-                const rect = cv.boundingRect(approx);
-                const aspectRatio = rect.width / rect.height;
+            const detectedBoxes: BoundingBox[] = [];
+            const minArea = (src.cols * src.rows) * 0.01;
 
-                if (area > minArea && aspectRatio > 0.8 && aspectRatio < 1.2) {
-                    detectedBoxes.push({
-                        x: rect.x / src.cols,
-                        y: rect.y / src.rows,
-                        width: rect.width / src.cols,
-                        height: rect.height / src.rows,
-                    });
+            for (let i = 0; i < contours.size(); ++i) {
+                const cnt = contours.get(i);
+                mats.push(cnt);
+                const peri = cv.arcLength(cnt, true);
+                const approx = new cv.Mat();
+                mats.push(approx);
+                cv.approxPolyDP(cnt, approx, 0.04 * peri, true);
+
+                // Filter for quadrilaterals that are likely chessboards
+                if (approx.rows === 4) {
+                    const area = cv.contourArea(approx);
+                    const rect = cv.boundingRect(approx);
+                    const aspectRatio = rect.width / rect.height;
+
+                    if (area > minArea && aspectRatio > 0.8 && aspectRatio < 1.2) {
+                        detectedBoxes.push({
+                            x: rect.x / src.cols,
+                            y: rect.y / src.rows,
+                            width: rect.width / src.cols,
+                            height: rect.height / src.rows,
+                        });
+                    }
                 }
             }
-            cnt.delete();
-            approx.delete();
+            return detectedBoxes;
+        } finally {
+            mats.forEach(mat => { if (mat && !mat.isDeleted()) mat.delete(); });
+        }
+    };
+
+    try {
+        const allBoxes: BoundingBox[] = [];
+        // Multi-scale analysis
+        const scales = [1.0, 0.75, 0.5]; 
+        
+        for (let i = 0; i < scales.length; i++) {
+            const scale = scales[i];
+            onProgress?.(`Deep Scan (${i + 1}/${scales.length}): Enhancing image...`);
+            
+            const scaledCanvas = document.createElement('canvas');
+            const newWidth = Math.round(canvas.width * scale);
+            const newHeight = Math.round(canvas.height * scale);
+            if (newWidth < 50 || newHeight < 50) continue; // Skip if too small
+            scaledCanvas.width = newWidth;
+            scaledCanvas.height = newHeight;
+            const ctx = scaledCanvas.getContext('2d');
+            ctx?.drawImage(canvas, 0, 0, newWidth, newHeight);
+            
+            onProgress?.(`Deep Scan (${i + 1}/${scales.length}): Finding boards...`);
+            const boxesAtScale = processScale(scaledCanvas);
+            allBoxes.push(...boxesAtScale);
         }
 
-        detectedBoxes.sort((a, b) => (b.width * b.height) - (a.width * a.height));
+        // Deduplicate boxes found across different scales
+        onProgress?.('Consolidating results...');
+        allBoxes.sort((a, b) => (b.width * b.height) - (a.width * a.height));
         const finalBoxes: BoundingBox[] = [];
-        const iouThreshold = 0.5;
+        const iouThreshold = 0.6; // A bit stricter to merge close detections from different scales
 
-        for (const boxA of detectedBoxes) {
+        for (const boxA of allBoxes) {
             let keep = true;
             for (const boxB of finalBoxes) {
-                const iou = calculateIoU(boxA, boxB);
-                if (iou > iouThreshold) {
+                if (calculateIoU(boxA, boxB) > iouThreshold) {
                     keep = false;
                     break;
                 }
@@ -550,9 +612,9 @@ export const detectChessboardsCV = async (canvas: HTMLCanvasElement): Promise<Bo
         }
         
         return finalBoxes;
-    } finally {
-        mats.forEach(mat => {
-            if (mat && !mat.isDeleted()) mat.delete();
-        });
+    } catch (error) {
+      console.error("OpenCV multi-scale detection failed:", error);
+      // Fallback to original simple method in case of error? No, just throw. The caller handles it.
+      throw error;
     }
 };

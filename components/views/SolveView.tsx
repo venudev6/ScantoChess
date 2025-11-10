@@ -10,7 +10,7 @@ import Chessboard from '../Chessboard';
 import CapturedPieces from '../ui/CapturedPieces';
 import MoveHistory from '../ui/MoveHistory';
 import { soundManager } from '../../lib/SoundManager';
-import { BackIcon, FlipIcon, FirstMoveIcon, PrevMoveIcon, NextMoveIcon, LastMoveIcon, BookmarkIcon, BookmarkFilledIcon, CheckIcon, CloseIcon, ShareIcon, DownloadIcon, CopyIcon, HomeIcon, AdviceIcon, PlusIcon } from '../ui/Icons';
+import { BackIcon, FlipIcon, FirstMoveIcon, PrevMoveIcon, NextMoveIcon, LastMoveIcon, BookmarkIcon, BookmarkFilledIcon, CheckIcon, CloseIcon, ShareIcon, DownloadIcon, CopyIcon, HomeIcon, AdviceIcon, PlusIcon, SettingsIcon, ArrowRightCircleIcon } from '../ui/Icons';
 import { PIECE_SETS, PIECE_NAMES } from '../../lib/chessConstants';
 import { useChessGame } from '../../hooks/useChessGame';
 import { useBoardDrawing } from '../../hooks/useBoardDrawing';
@@ -112,7 +112,6 @@ const BookmarkModal = ({ isOpen, onClose, onSave, onRemove, initialGame, anchorR
     );
 };
 
-// FIX: Cannot find name 'AppSettingsHook'.
 type AppSettingsHook = ReturnType<typeof useAppSettings>;
 
 interface SolveViewProps {
@@ -161,6 +160,7 @@ const SolveView = ({
     const [isShareModalOpen, setIsShareModalOpen] = useState(false);
     const isMakingEngineMove = useRef(false);
     const [isAnalysisModalOpen, setIsAnalysisModalOpen] = useState(false);
+    const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
 
 
     const [highlightedSquares, setHighlightedSquares] = useState<ChessJSSquare[]>([]);
@@ -186,6 +186,7 @@ const SolveView = ({
     const [isBookmarkModalOpen, setIsBookmarkModalOpen] = useState(false);
     const [bookmarkAnchorRect, setBookmarkAnchorRect] = useState<DOMRect | null>(null);
     const bookmarkButtonRef = useRef<HTMLButtonElement>(null);
+    const moveHistoryScrollRef = useRef<HTMLDivElement>(null);
 
     const PIECE_COMPONENTS = PIECE_SETS[appSettings.pieceTheme as keyof typeof PIECE_SETS] || PIECE_SETS['staunty'];
     
@@ -193,6 +194,17 @@ const SolveView = ({
     const historyRef = useRef(mainLineHistory);
     const isInitialHistoryRef = useRef(!!initialHistory);
 
+    useEffect(() => {
+        // On initial load of a puzzle, set the board orientation based on whose turn it is.
+        // The user can still manually flip it afterwards.
+        if (initialFen.split(' ')[1] === 'b') {
+            setIsFlipped(true);
+        } else {
+            // If a new puzzle is loaded and it's white's turn, reset to default orientation.
+            setIsFlipped(false);
+        }
+    }, [initialFen, setIsFlipped]);
+    
     useEffect(() => {
         if (appSettings.engineEnabled) {
             if (playerSide === null) {
@@ -342,9 +354,9 @@ const SolveView = ({
         } catch (e) { console.error("Failed to remove bookmark:", e); }
     };
     
-    const handleNavigateHistory = (nodeId: string) => {
+    const handleNavigateHistory = useCallback((nodeId: string) => {
         navigateHistory(nodeId);
-    };
+    }, [navigateHistory]);
 
     const handlePrevMove = () => {
         if (historyIndex > 0) {
@@ -375,12 +387,11 @@ const SolveView = ({
             setIsAnalysisModalOpen(true);
         }
     };
-
+    
     const lastMove = historyIndex >= 0 ? { from: mainLineHistory[historyIndex].from, to: mainLineHistory[historyIndex].to } : null;
     const backButtonTitle = sourceView === 'result' ? "Back to Editor" : "Back to List";
     const nextButtonText = source === 'pdf' ? 'Back to PDF' : 'New Scan';
-    const nextButtonTitle = source === 'pdf' ? 'Return to PDF viewer' : 'Start a new scan';
-
+    
     return (
         <div className="card solve-view-card">
             
@@ -406,6 +417,8 @@ const SolveView = ({
                     isThinking={stockfish.isThinking}
                     playerSide={playerSide}
                     turn={turn}
+                    onHome={onHome}
+                    onSettingsClick={() => setIsSettingsModalOpen(true)}
                 />
                 <div className="board-area" ref={boardAreaRef} onContextMenu={(e) => e.preventDefault()} onPointerDown={handleBoardPointerDown} onPointerMove={handleBoardPointerMove} onPointerUp={handleBoardPointerUp}>
                     <div className="board-and-captures-wrapper">
@@ -431,6 +444,18 @@ const SolveView = ({
                     {showSaveConfirmation && createPortal( <div className="save-toast"><CheckIcon /> Game Saved</div>, document.body )}
                 </div>
                 <div className="solve-controls">
+                    <div className="move-history-wrapper">
+                        <div className="move-history-scroll-container" ref={moveHistoryScrollRef}>
+                            <MoveHistory 
+                                rootNode={rootNode} 
+                                currentNode={currentNode} 
+                                onNavigate={handleNavigateHistory} 
+                                onArchiveBranch={archiveBranch}
+                                onRestoreBranch={restoreBranch}
+                            />
+                        </div>
+                    </div>
+
                     <div className="move-navigation-controls">
                         <button className="btn-icon" onClick={() => { soundManager.play('UI_CLICK'); handleFirstMove(); }} disabled={historyIndex < 0} aria-label="First move" title="Go to the first move"><FirstMoveIcon /></button>
                         <button className="btn-icon" onClick={() => { soundManager.play('UI_CLICK'); handlePrevMove(); }} disabled={historyIndex < 0} aria-label="Previous move" title="Go to previous move"><PrevMoveIcon /></button>
@@ -440,16 +465,7 @@ const SolveView = ({
                         <button ref={bookmarkButtonRef} className={`btn-icon ${bookmarkedGame ? 'bookmarked' : ''}`} onClick={handleBookmarkClick} title={bookmarkedGame ? "Edit Bookmark" : "Bookmark Game"} aria-label={bookmarkedGame ? "Edit Bookmark" : "Bookmark Game"}>{bookmarkedGame ? <BookmarkFilledIcon /> : <BookmarkIcon />}</button>
                         <button className="btn-icon" onClick={() => setIsShareModalOpen(true)} title="Share Position" aria-label="Share Position"><ShareIcon /></button>
                     </div>
-                    <div className="move-history-wrapper">
-                        <MoveHistory 
-                            rootNode={rootNode} 
-                            currentNode={currentNode} 
-                            onNavigate={handleNavigateHistory} 
-                            onArchiveBranch={archiveBranch}
-                            onRestoreBranch={restoreBranch}
-                        />
-                        <BookmarkModal isOpen={isBookmarkModalOpen} onClose={() => setIsBookmarkModalOpen(false)} onSave={handleSaveBookmark} onRemove={handleRemoveBookmark} initialGame={bookmarkedGame} anchorRect={bookmarkAnchorRect} />
-                    </div>
+                    <BookmarkModal isOpen={isBookmarkModalOpen} onClose={() => setIsBookmarkModalOpen(false)} onSave={handleSaveBookmark} onRemove={handleRemoveBookmark} initialGame={bookmarkedGame} anchorRect={bookmarkAnchorRect} />
 
                     <div className="solve-main-actions">
                         <div className="result-actions">
@@ -463,8 +479,8 @@ const SolveView = ({
                                 <AdviceIcon />
                                 <span>{cooldown > 0 ? `Analysis (${Math.floor(cooldown/60)}:${String(cooldown%60).padStart(2,'0')})` : 'Analysis'}</span>
                             </button>
-                            <button className="btn-icon btn-analyze" onClick={() => onNextPuzzle(sourceView)} title={nextButtonTitle} aria-label={nextButtonTitle}>
-                                <PlusIcon />
+                            <button className="btn-icon btn-next-puzzle" onClick={() => onNextPuzzle(sourceView)} title="Next Puzzle" aria-label="Next Puzzle">
+                                <ArrowRightCircleIcon />
                             </button>
                         </div>
                     </div>
@@ -495,6 +511,41 @@ const SolveView = ({
                                     Lichess.org
                                 </a>
                             </div>
+                        </div>
+                    </div>,
+                    document.body
+                )}
+                 {isSettingsModalOpen && createPortal(
+                    <div className="settings-modal-overlay" onClick={() => setIsSettingsModalOpen(false)}>
+                        <div className="settings-modal-content" onClick={e => e.stopPropagation()}>
+                            <header className="settings-modal-header">
+                                <h2>Settings</h2>
+                                <button onClick={() => setIsSettingsModalOpen(false)} className="close-btn"><CloseIcon /></button>
+                            </header>
+                            <main className="settings-modal-body">
+                                 <UserPanel 
+                                    user={user} 
+                                    isLoggedIn={isLoggedIn} 
+                                    onLogout={onLogout} 
+                                    onAdminPanelClick={onAdminPanelClick} 
+                                    onSavedGamesClick={onSavedGamesClick} 
+                                    onHistoryClick={onHistoryClick} 
+                                    onLoginClick={onAuthRequired} 
+                                    onProfileClick={onProfileClick} 
+                                    appSettings={appSettings} 
+                                    scanDuration={scanDuration} 
+                                    clientProcessingTime={clientProcessingTime}
+                                    serverProcessingTime={serverProcessingTime}
+                                    analysisDetails={analysisDetails} 
+                                    displayMode="full"
+                                    debugLog={stockfish.debugLog}
+                                    bestMove={stockfish.bestMove}
+                                    isEngineReady={stockfish.isReady}
+                                    isThinking={stockfish.isThinking}
+                                    playerSide={playerSide}
+                                    turn={turn}
+                                />
+                            </main>
                         </div>
                     </div>,
                     document.body

@@ -276,11 +276,6 @@
     overflow-wrap: break-word;
 }
 
-/* ====== RESPONSIVE ====== */
-@media (max-width: 768px) and (orientation: landscape){
-  .solve-view-card{ padding: 12px; }
-}
-
 /* Save toast */
 .save-toast{
   position: fixed; bottom: 2rem; left: 50%; transform: translateX(-50%);
@@ -295,4 +290,214 @@
   15%{opacity:1; transform:translate(-50%, 0);}
   85%{opacity:1; transform:translate(-50%, 0);}
   100%{opacity:0; transform:translate(-50%, -10px);}
+}
+
+
+/* New Settings Modal for Mobile Solve View */
+.settings-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    animation: fadeIn 0.3s ease;
+}
+
+.settings-modal-content {
+    background: #f9fafb;
+    width: 90vw;
+    max-width: 380px;
+    height: 85vh;
+    max-height: 700px;
+    display: flex;
+    flex-direction: column;
+    border-radius: 1rem;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+    animation: slide-down-fade 0.3s ease-out;
+}
+
+.settings-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+.settings-modal-header h2 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin: 0;
+}
+.settings-modal-header .close-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-muted-color);
+    padding: 0.25rem;
+}
+.settings-modal-header .close-btn:hover {
+    color: var(--text-color);
+}
+.settings-modal-body {
+    flex-grow: 1;
+    min-height: 0;
+    overflow-y: hidden;
+}
+.settings-modal-body > .user-panel {
+    height: 100%;
+    max-height: none;
+    width: 100%;
+    border: none;
+    box-shadow: none;
+    background: transparent;
+    border-radius: 0;
+    position: static;
+    display: flex;
+}
+
+
+/* ====== RESPONSIVE ====== */
+@media (max-width: 768px) and (orientation: landscape){
+  .solve-view-card{ padding: 12px; }
+}
+
+@media (max-width: 768px) and (orientation: portrait) {
+    /* 1. Make board full width */
+    .board-area {
+        padding: 0;
+        background-color: #f3f4f6;
+    }
+    .board-and-captures-wrapper {
+        width: 100%;
+        --board-size: 100%;
+    }
+
+    /* 2. Restyle Controls and Move History */
+    .solve-controls {
+        padding: 0.5rem 0.75rem; /* Vertical | Horizontal */
+        gap: 0.75rem;
+        justify-content: flex-end;
+        background-color: #fff;
+        border-top: 1px solid var(--border-color);
+        box-shadow: 0 -2px 8px rgba(0,0,0,0.05);
+    }
+    
+    .move-navigation-controls {
+        padding-bottom: 0;
+        margin-bottom: 0.25rem;
+        /* Visually separate from move history */
+        border-top: 1px solid var(--border-color);
+        padding-top: 0.5rem;
+        margin-top: 0.5rem;
+    }
+    
+    /* On mobile, this wrapper becomes a flex row for the scroller */
+    .move-history-wrapper {
+        order: -1; /* Place it BEFORE nav controls */
+        display: flex;
+        align-items: center;
+        width: 100%;
+        background-color: transparent;
+        border: none;
+        padding: 0;
+        margin: 0 0 0.5rem 0;
+        box-shadow: none;
+        border-radius: 0;
+        min-height: 44px;
+    }
+
+    .move-history-wrapper::before {
+        display: none; /* Hide the "Move History" title */
+    }
+
+    .move-history-scroll-container {
+        flex-grow: 1;
+        min-width: 0;
+        overflow-x: auto;
+        overflow-y: hidden;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none; /* Firefox */
+    }
+    .move-history-scroll-container::-webkit-scrollbar {
+        display: none; /* Hide scrollbar for Chrome, Safari, etc. */
+    }
+
+    /* Container inside the scroller, make it simple */
+    .move-history-scroll-container .move-history-panel {
+        padding: 0;
+        height: 44px;
+        border: none;
+        box-shadow: none;
+        background: transparent;
+        flex-grow: 0;
+        width: max-content; /* Allow it to grow as wide as its content */
+    }
+    
+    .move-history-scroll-container .move-history-content {
+        padding-right: 0;
+        overflow: visible; /* Let the parent handle scrolling */
+    }
+
+    /* Make the list of moves a single row */
+    .move-history-scroll-container .move-list {
+        display: flex;
+        flex-direction: row;
+        flex-wrap: nowrap;
+        align-items: center;
+        gap: 0.25rem;
+        padding: 0 0.5rem;
+        height: 100%;
+    }
+    
+    /* Make move lines part of the flex row */
+    .move-history-scroll-container .move-line {
+        display: inline-flex;
+        align-items: baseline;
+        flex-shrink: 0;
+    }
+    
+    .move-history-scroll-container .white-move {
+        margin-right: 3px;
+    }
+
+    .move-history-scroll-container .move-number {
+        font-size: 0.9rem;
+        color: var(--text-muted-color);
+        font-weight: 500;
+        margin-right: 2px;
+        white-space: nowrap;
+    }
+    
+    .move-history-scroll-container .move-notation {
+        flex-shrink: 0; /* Prevent move notations from shrinking */
+    }
+
+    /* Hide variations on mobile */
+    .move-history-scroll-container .variation-group {
+        display: none !important;
+    }
+    
+    /* 3. Reduce other paddings */
+    .solve-main-actions {
+        order: 2; /* Place at the very bottom */
+        padding-top: 0.5rem;
+        margin-top: 0;
+        border-top: 1px solid var(--border-color);
+    }
+}
+
+.solve-main-actions .result-actions .btn-next-puzzle {
+    background-color: transparent;
+    border: 1px solid var(--border-color);
+    border-radius: 50%; /* circular */
+    color: var(--text-muted-color);
+}
+
+.solve-main-actions .result-actions .btn-next-puzzle:hover:not(:disabled) {
+    background-color: #eef2ff; /* light indigo hover */
+    color: var(--primary-color);
+    border-color: #c7d2fe;
 }

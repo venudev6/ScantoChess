@@ -200,10 +200,10 @@ const MoveHistory = ({ rootNode, currentNode, onNavigate, onArchiveBranch, onRes
     
     const mainLine = useMemo(() => {
         const line: HistoryEntry[] = [];
-        let current = rootNode.children.length > 0 ? rootNode.children[0] : undefined;
+        let current = rootNode.children.find(c => !c.archived);
         while (current) {
             line.push(current);
-            current = current.children.length > 0 ? current.children[0] : undefined;
+            current = current.children.find(c => !c.archived);
         }
         return line;
     }, [rootNode]);
@@ -293,7 +293,7 @@ const MoveHistory = ({ rootNode, currentNode, onNavigate, onArchiveBranch, onRes
                     </div>
                 ) : (
                     <div className="no-moves-placeholder">
-                        <h4>Move History</h4>
+                        {/* The title is now handled by the parent wrapper's ::before pseudo-element */}
                     </div>
                 )}
             </div>

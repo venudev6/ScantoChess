@@ -65,7 +65,7 @@ const EditorControls = ({
     const blackPaletteRef = useRef<HTMLDivElement>(null);
     const warpedImageDataUrl = analysisDetails?.warpedImageDataUrl;
     
-    const PIECE_COMPONENTS = PIECE_SETS[pieceTheme as keyof typeof PIECE_SETS] || PIECE_SETS['merida'];
+    const PIECE_COMPONENTS = PIECE_SETS[pieceTheme as keyof typeof PIECE_SETS] || PIECE_SETS['staunty'];
     const WhitePawn = PIECE_COMPONENTS.w.p;
     const BlackPawn = PIECE_COMPONENTS.b.p;
 
@@ -162,7 +162,6 @@ const EditorControls = ({
                             </div>
                         </div>
                     )})}
-                    {/* FIX: The component was truncated here. The onClick handler, children, and closing tags for the remove zone have been restored. */}
                     <div className={`remove-zone ${ghostPosition || (heldPiece && heldPiece.from !== 'palette') ? 'dragging-active' : ''}`} onClick={handleRemoveClick} role="button" tabIndex={0} title="Remove held piece from board">
                         <TrashIcon />
                         <span>Remove Piece</span>
@@ -182,7 +181,7 @@ const EditorControls = ({
                     </div>
                 )}
                 <h4 className="fen-header">
-                    Position (FEN)
+                    FEN
                     {appSettings.fenCopyLocked && <LockIcon />}
                 </h4>
                 <div className={`fen-input-wrapper ${!isFenValid ? 'invalid' : ''}`}>

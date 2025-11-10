@@ -545,12 +545,6 @@
     justify-content: center;
 }
 
-.guest-panel-content p {
-    font-size: 0.9rem;
-    color: var(--text-muted-color);
-    line-height: 1.5;
-}
-
 .guest-panel .role-badge.role-guest {
     background-color: #f3f4f6; /* gray-100 */
     color: #4b5563; /* gray-600 */
@@ -640,16 +634,29 @@
     overflow-y: auto;
 }
 
+.user-panel.compact-panel .settings-toggle-btn {
+    display: none; /* Hide settings button on desktop by default */
+}
+
+.user-panel.compact-panel .home-logo-btn {
+    display: none; /* Hide on desktop compact view */
+}
+
+.user-panel.compact-panel .home-logo-btn svg {
+    width: 42px;
+    height: 42px;
+}
+
 @media (max-width: 1024px) {
     /* Hide the sidebar on tablet, but we'll re-enable it for mobile */
-     .user-panel {
+     .result-view-container > .user-panel {
         display: none;
     }
 }
 
 
 @media (max-width: 768px) and (orientation: portrait) {
-    .user-panel {
+    .user-panel.compact-panel {
         display: flex; /* Re-display for mobile */
         order: -1;
         width: 100%;
@@ -665,18 +672,52 @@
         align-self: stretch; /* on mobile it's a row, so stretch it */
         position: static; /* Unset sticky for mobile */
     }
-    .user-panel-nav { display: none; }
+    /* Show home button and hide user header on mobile */
+    .user-panel.compact-panel .home-logo-btn {
+        display: inline-flex;
+        width: 42px;
+        height: 42px;
+        align-items: center;
+        justify-content: center;
+    }
+    .user-panel.compact-panel .user-panel-header {
+        display: none;
+    }
+
+    .user-panel.compact-panel .settings-toggle-btn {
+        display: inline-flex; /* Show settings button only on mobile header */
+        flex-shrink: 0;
+        width: 44px;
+        height: 44px;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .user-panel.compact-panel .settings-toggle-btn svg {
+        width: 28px;
+        height: 28px;
+    }
     
-    .guest-panel .guest-panel-content {
+    .user-panel.compact-panel .user-panel-scroll-container {
+        display: none; /* Hide the scroll container which was pushing the settings button */
+    }
+    
+    .user-panel.compact-panel .user-panel-nav,
+    .user-panel.compact-panel .logout-wrapper,
+    .user-panel.compact-panel .control-section {
+        display: none;
+    }
+    
+    .user-panel.compact-panel.guest-panel .guest-panel-content {
         display: none; /* Hide the main guest content, the header is enough */
     }
 
     /* For mobile, add a login button next to the guest info */
-    .user-panel.guest-panel .user-panel-header {
+    .user-panel.compact-panel.guest-panel .user-panel-header {
         flex-grow: 1;
         justify-content: space-between;
     }
-    .user-panel.guest-panel .user-panel-header::after {
+    .user-panel.compact-panel.guest-panel .user-panel-header::after {
         content: "Login";
         display: block;
         padding: 0.5rem 1rem;
@@ -686,19 +727,6 @@
         font-weight: 500;
         font-size: 0.9rem;
         cursor: pointer;
-    }
-
-
-    .user-panel-header {
-        border-bottom: none;
-        padding-bottom: 0;
-    }
-
-    .user-panel-details-scroll-area, .scan-stats-container, .scan-timing-details, .post-scan-validations, .engine-debug-log-section, .logout-wrapper {
-        display: none;
-    }
-    .control-section {
-        display: none; /* Hide engine controls on mobile for now to save space */
     }
 }
 
@@ -845,4 +873,10 @@
 }
 .segmented-option input:focus-visible + label {
     box-shadow: 0 0 0 2px var(--primary-color);
+}
+
+.settings-modal-body .user-panel-header {
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 0.75rem;
+    padding-bottom: 1rem;
 }

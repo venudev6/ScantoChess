@@ -278,10 +278,22 @@ const PdfView: React.FC<PdfViewProps> = ({
   const startDragPoint = useRef({ x: 0, y: 0 });
   const originalCropBox = useRef<CropBox | null>(null);
   const justFinishedDrawing = useRef(false);
-  const [targetScroll, setTargetScroll] = useState<{ left: number; top: number } | null>(null);
-
+  
+  const scrollRestoreRef = useRef<{ page: number, ratio: number } | null>(null);
   const isScrollingProgrammatically = useRef(false);
   const scrollTimeout = useRef<any>(null);
+
+  useLayoutEffect(() => {
+    if (scrollRestoreRef.current && mainViewRef.current) {
+        const { page, ratio } = scrollRestoreRef.current;
+        const newPageEl = pageWrapperRefs.current.get(page);
+        if (newPageEl) {
+            // Restore scroll position relative to the element that was in view.
+            mainViewRef.current.scrollTop = newPageEl.offsetTop + (ratio * newPageEl.clientHeight);
+        }
+        scrollRestoreRef.current = null; // Reset after use
+    }
+  }, [zoom]); // This effect runs only when zoom changes and the DOM has updated.
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -356,7 +368,8 @@ const PdfView: React.FC<PdfViewProps> = ({
         setCurrentPage(pageNumber);
         setPageInput(String(pageNumber));
         clearTimeout(scrollTimeout.current);
-        scrollTimeout.current = setTimeout(() => { isScrollingProgrammatically.current = false; }, behavior === 'smooth' ? 500 : 50);
+        // FIX: Increased timeout to 1000ms for smooth scroll to prevent premature firing of manual scroll handler.
+        scrollTimeout.current = setTimeout(() => { isScrollingProgrammatically.current = false; }, behavior === 'smooth' ? 1000 : 50);
     }
   }, []);
 
@@ -404,6 +417,7 @@ const PdfView: React.FC<PdfViewProps> = ({
   }, [currentPage]);
   
   const handlePagePointerDown = (e: React.PointerEvent<HTMLDivElement>, pageNum: number) => {
+    if (window.innerWidth <= 768) return; // Disable cropping on mobile
     if (e.button !== 0 || currentPage !== pageNum || isDeepScanning || isConfirming) return;
 
     const target = e.target as HTMLElement;
@@ -459,334 +473,372 @@ const PdfView: React.FC<PdfViewProps> = ({
             if (cropMode === 'moving') {
                 newBox.x += dx;
                 newBox.y += dy;
-            } else if (cropMode === 'resizing' && activeResizeHandle) {
-                if (activeResizeHandle.includes('n')) { newBox.y += dy; newBox.height -= dy; }
-                if (activeResizeHandle.includes('s')) { newBox.height += dy; }
-                if (activeResizeHandle.includes('w')) { newBox.x += dx; newBox.width -= dx; }
-                if (activeResizeHandle.includes('e')) { newBox.width += dx; }
-            }
+            } else if (activeResizeHandle) {
+                if (activeResizeHandle.includes('n')) {
+                    newBox.y += dy;
+                    newBox.height -= dy;
+                }
+                if (activeResizeHandle.includes('s')) {
+                    newBox.height += dy;
+                }
+                if (activeResizeHandle.includes('w')) {
+                    newBox.x += dx;
+                    newBox.width -= dx;
+                }
+                if (activeResizeHandle.includes('e')) {
+                    newBox.width += dx;
+                }
 
+                // Handle negative width/height by swapping points
+                if (newBox.width < 0) {
+                    newBox.x += newBox.width;
+                    newBox.width = Math.abs(newBox.width);
+                }
+                if (newBox.height < 0) {
+                    newBox.y += newBox.height;
+                    newBox.height = Math.abs(newBox.height);
+                }
+            }
+            
+            // Constrain box to page boundaries
             newBox.x = Math.max(0, newBox.x);
             newBox.y = Math.max(0, newBox.y);
-            if (newBox.x + newBox.width > pageWrapper.clientWidth) {
-                newBox.width = pageWrapper.clientWidth - newBox.x;
-            }
-            if (newBox.y + newBox.height > pageWrapper.clientHeight) {
-                newBox.height = pageWrapper.clientHeight - newBox.y;
-            }
+            newBox.width = Math.min(rect.width - newBox.x, newBox.width);
+            newBox.height = Math.min(rect.height - newBox.y, newBox.height);
+
             setCropBox(newBox);
         }
     };
 
-    const handlePointerUp = () => {
+    const handlePointerUp = (e: PointerEvent) => {
+        if (cropBox && (cropBox.width < 10 || cropBox.height < 10)) {
+            setCropBox(null); // Discard tiny boxes
+        } else {
+            setIsConfirming(!!cropBox);
+        }
         setCropMode('idle');
         setActiveResizeHandle(null);
-        originalCropBox.current = null;
         justFinishedDrawing.current = true;
-        setCropBox(prevBox => {
-            if (!prevBox) return null;
-            const newBox = { ...prevBox };
-            if (newBox.width < 0) {
-                newBox.x = newBox.x + newBox.width;
-                newBox.width = Math.abs(newBox.width);
-            }
-            if (newBox.height < 0) {
-                newBox.y = newBox.y + newBox.height;
-                newBox.height = Math.abs(newBox.height);
-            }
-            if (newBox.width < 10 || newBox.height < 10) {
-                return null;
-            }
-            return newBox;
-        });
+        setTimeout(() => justFinishedDrawing.current = false, 100);
     };
 
     window.addEventListener('pointermove', handlePointerMove);
-    window.addEventListener('pointerup', handlePointerUp, { once: true });
+    window.addEventListener('pointerup', handlePointerUp);
 
     return () => {
         window.removeEventListener('pointermove', handlePointerMove);
         window.removeEventListener('pointerup', handlePointerUp);
     };
-  }, [cropMode, activeResizeHandle, currentPage, isDocLoading]);
+  }, [cropMode, isDocLoading, currentPage, activeResizeHandle, cropBox]);
 
-  useEffect(() => {
-    if (justFinishedDrawing.current && cropBox && mainViewRef.current) {
-        justFinishedDrawing.current = false; // Consume the flag
+  const handleResizeHandlePointerDown = (e: React.PointerEvent<HTMLDivElement>, handle: ResizeHandle) => {
+      e.preventDefault();
+      e.stopPropagation();
+      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+      
+      const pageWrapper = pageWrapperRefs.current.get(currentPage);
+      if (!pageWrapper) return;
+      const rect = pageWrapper.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
 
-        const isMobile = window.innerWidth <= 768;
-        if (!isMobile) return;
-
-        if (cropBox.width < 20 || cropBox.height < 20) return;
-        
-        const container = mainViewRef.current;
-        const padding = 40; // 20px on each side
-        const targetWidth = container.clientWidth - padding;
-
-        if (cropBox.width === 0) return;
-        
-        const zoomFactor = targetWidth / cropBox.width;
-        const newZoom = Math.min(zoom * zoomFactor, 5.0); // Cap max zoom
-
-        const newCropX = cropBox.x * (newZoom / zoom);
-        const newCropWidth = cropBox.width * (newZoom / zoom);
-        const newCropY = cropBox.y * (newZoom / zoom);
-        
-        const scrollLeft = newCropX + (newCropWidth / 2) - (container.clientWidth / 2);
-        const scrollTop = newCropY - 20;
-
-        setTargetScroll({ left: scrollLeft, top: scrollTop });
-        setZoom(newZoom);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cropBox, zoom]);
-
-  useLayoutEffect(() => {
-    if (targetScroll && mainViewRef.current) {
-        mainViewRef.current.scrollTo({
-            left: targetScroll.left,
-            top: targetScroll.top,
-            behavior: 'smooth'
-        });
-        setTargetScroll(null); // Reset after scrolling
-    }
-  }, [targetScroll]);
+      startDragPoint.current = { x, y };
+      originalCropBox.current = cropBox;
+      setCropMode('resizing');
+      setActiveResizeHandle(handle);
+  };
   
+  const handleCropBoxPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+      if (justFinishedDrawing.current || cropMode !== 'idle') return;
+      e.preventDefault();
+      e.stopPropagation();
+      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+
+      const pageWrapper = pageWrapperRefs.current.get(currentPage);
+      if (!pageWrapper) return;
+      const rect = pageWrapper.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      startDragPoint.current = { x, y };
+      originalCropBox.current = cropBox;
+      setCropMode('moving');
+  };
+
+  const handleConfirmCrop = async () => {
+      if (!cropBox || !pdfDoc) return;
+      setIsConfirming(false);
+      
+      const startTime = performance.now();
+      const page = await pdfDoc.getPage(currentPage);
+      const viewport = page.getViewport({ scale: 1.0, rotation: page.rotate });
+      
+      // Calculate crop dimensions relative to the unscaled PDF page
+      const cropX = (cropBox.x / (viewport.width * zoom)) * viewport.width;
+      const cropY = (cropBox.y / (viewport.height * zoom)) * viewport.height;
+      const cropWidth = (cropBox.width / (viewport.width * zoom)) * viewport.width;
+      const cropHeight = (cropBox.height / (viewport.height * zoom)) * viewport.height;
+
+      const tempCanvas = document.createElement("canvas");
+      const tempViewport = page.getViewport({ scale: 4.0, rotation: page.rotate }); // High-res for cropping
+      tempCanvas.width = tempViewport.width;
+      tempCanvas.height = tempViewport.height;
+      const tempCtx = tempCanvas.getContext("2d", { willReadFrequently: true });
+
+      if (tempCtx) {
+          tempCtx.fillStyle = '#FFFFFF';
+          tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+          await page.render({ canvasContext: tempCtx, viewport: tempViewport }).promise;
+
+          const finalFile = await resizeAndExportImage(
+            tempCanvas,
+            { maxDimension: 640, type: 'image/webp', quality: 0.85, fileName: 'cropped_puzzle.webp' },
+            { 
+              x: cropX * 4.0, 
+              y: cropY * 4.0,
+              width: cropWidth * 4.0,
+              height: cropHeight * 4.0,
+            }
+          );
+          
+          if(finalFile) {
+              const clientProcessingTime = performance.now() - startTime;
+              onCropConfirm(finalFile, { page: currentPage, totalPages: numPages }, clientProcessingTime);
+              setCropBox(null);
+          }
+      }
+      page.cleanup();
+  };
+  
+  const handleThumbGenerated = (pageNum: number, dataUrl: string) => {
+    setThumbs(prev => new Map(prev).set(pageNum, dataUrl));
+    if (pageNum === 1) {
+        db.updatePdfState(pdfId, currentPage, zoom, dataUrl);
+    }
+  };
+
+  const handleDeepScan = useCallback(async () => {
+    await startDeepScan(currentPage, (puzzles: DetectedPuzzle[]) => {
+      setScannedPuzzles(prev => new Map(prev).set(currentPage, puzzles));
+      setScannedPages(prev => new Set(prev).add(currentPage));
+    });
+  }, [startDeepScan, currentPage]);
+
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-        if (e.key === 'Escape') {
-            setCropBox(null);
-            setCropMode('idle');
+    const fetchCachedPuzzles = async () => {
+        const cached = await db.getPdfPuzzles(pdfId, currentPage);
+        if (cached) {
+            setScannedPuzzles(prev => new Map(prev).set(currentPage, cached.puzzles));
+            setScannedPages(prev => new Set(prev).add(currentPage));
         }
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
-
-  const handleConfirmCrop = useCallback(async (boxToCrop?: CropBox) => {
-    const box = boxToCrop || cropBox;
-    if (!pdfDoc || !box || box.width < 10 || box.height < 10) return;
-    setIsConfirming(true);
-    const startTime = performance.now();
-    let page: PDFPageProxy | null = null;
-    try {
-        page = await pdfDoc.getPage(currentPage);
-        const CROP_SCALE = 2.0;
-        const pageViewportForRender = page.getViewport({ scale: CROP_SCALE, rotation: page.rotate });
-
-        const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = pageViewportForRender.width;
-        tempCanvas.height = pageViewportForRender.height;
-        const ctx = tempCanvas.getContext('2d');
-
-        if (ctx) {
-            await page.render({ canvasContext: ctx, viewport: pageViewportForRender } as any).promise;
-
-            const finalCanvas = document.createElement('canvas');
-            const actualPageViewport = page.getViewport({ scale: zoom, rotation: page.rotate });
-            const scaleRatio = pageViewportForRender.width / actualPageViewport.width;
-
-            const boxWidthPx = box.width * scaleRatio;
-            const boxHeightPx = box.height * scaleRatio;
-            finalCanvas.width = boxWidthPx;
-            finalCanvas.height = boxHeightPx;
-            const finalCtx = finalCanvas.getContext('2d');
-            
-            if (finalCtx) {
-                finalCtx.drawImage(
-                    tempCanvas,
-                    box.x * scaleRatio, box.y * scaleRatio,
-                    boxWidthPx, boxHeightPx,
-                    0, 0,
-                    boxWidthPx, boxHeightPx
-                );
-                
-                const croppedFile = await resizeAndExportImage(finalCanvas, { maxDimension: 800, type: "image/webp", quality: 0.8, fileName: "cropped-puzzle.webp" });
-                if (croppedFile) {
-                    onCropConfirm(croppedFile, { page: currentPage, totalPages: numPages }, performance.now() - startTime);
-                }
-            }
-        }
-        setCropBox(null);
-    } catch (e) {
-        console.error("Error confirming crop", e);
-        setError("Could not process the selected crop.");
-    } finally {
-        setIsConfirming(false);
-        page?.cleanup();
+    if (!scannedPages.has(currentPage)) {
+        fetchCachedPuzzles();
     }
-  }, [pdfDoc, cropBox, currentPage, numPages, onCropConfirm, zoom]);
-
-  const handleThumbGenerated = useCallback((pageNum: number, dataUrl: string) => { setThumbs(prev => new Map(prev).set(pageNum, dataUrl)); }, []);
+  }, [currentPage, pdfId, scannedPages]);
   
-  const handleThumbClick = (pageNumber: number) => { scrollToPage(pageNumber); };
-  const prevPage = () => handleThumbClick(Math.max(1, currentPage - 1));
-  const nextPage = () => handleThumbClick(Math.min(numPages, currentPage + 1));
+  
+  const renderPages = () => {
+    if (!pdfDoc || !pageViewport) return null;
+    const pages = [];
+    const minPage = Math.max(1, currentPage - PAGE_BUFFER);
+    const maxPage = Math.min(numPages, currentPage + PAGE_BUFFER);
 
-  const onPageInputBlur = () => {
+    for (let i = 1; i <= numPages; i++) {
+        const isVisible = i >= minPage && i <= maxPage;
+        const pagePuzzles = scannedPuzzles.get(i) || [];
+        
+        pages.push(
+          <div 
+            key={i} 
+            ref={el => pageWrapperRefs.current.set(i, el)} 
+            className="pdf-page-wrapper"
+            onPointerDown={(e) => handlePagePointerDown(e, i)}
+          >
+            <PageRenderer 
+              pdfDoc={pdfDoc} 
+              pageNumber={i}
+              scale={zoom}
+              isVisible={isVisible}
+              puzzles={pagePuzzles}
+              onPuzzleClick={onPreScannedPuzzleFound ? (puzzle) => onPreScannedPuzzleFound(puzzle.fen) : ()=>{}}
+              placeholderHeight={pageViewport.height * zoom}
+              placeholderWidth={pageViewport.width * zoom}
+            />
+            {isDeepScanning && i === currentPage && (
+                <div className="pdf-page-scan-overlay">
+                    <div className="spinner" />
+                    <p>{scanProgress.message}</p>
+                    {scanProgress.total > 0 && <progress value={scanProgress.current} max={scanProgress.total} />}
+                    <button className="btn btn-secondary" onClick={cancelDeepScan}>Cancel</button>
+                </div>
+            )}
+             {cropBox && i === currentPage && (
+                <div className="pdf-crop-layer">
+                    <div 
+                        className="crop-box" 
+                        style={{ left: cropBox.x, top: cropBox.y, width: cropBox.width, height: cropBox.height }}
+                        onPointerDown={handleCropBoxPointerDown}
+                        onPointerUp={(e) => e.stopPropagation()} // Prevent page pointer up
+                    >
+                        {(['nw', 'ne', 'sw', 'se', 'n', 's', 'w', 'e'] as ResizeHandle[]).map(handle => (
+                            <div 
+                                key={handle} 
+                                className={`resize-handle resize-handle-${handle}`}
+                                onPointerDown={(e) => handleResizeHandlePointerDown(e, handle)}
+                            />
+                        ))}
+                        {isConfirming && (
+                            <div className="crop-actions">
+                                <button className="btn-icon" onClick={() => { setCropBox(null); setIsConfirming(false); }} aria-label="Cancel crop"><CloseIcon /></button>
+                                <button className="btn-icon btn-confirm" onClick={handleConfirmCrop} aria-label="Confirm crop"><CheckIcon /></button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+          </div>
+        );
+    }
+    return pages;
+  };
+  
+  const handleBack = () => {
+    if (isDeepScanning) cancelDeepScan();
+    onBack();
+  };
+
+  const handlePageInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setPageInput(e.target.value);
+  };
+  
+  const handlePageInputSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
     const pageNum = parseInt(pageInput, 10);
-    if (!isNaN(pageNum) && pageNum >= 1 && pageNum <= numPages) {
+    if (pageNum >= 1 && pageNum <= numPages) {
         scrollToPage(pageNum);
     } else {
         setPageInput(String(currentPage));
     }
   };
   
-  useEffect(() => {
-      const loadPuzzles = async () => {
-          if (pdfDoc && !scannedPuzzles.has(currentPage)) {
-              const puzzles = await db.getPdfPuzzles(pdfId, currentPage);
-              if (puzzles) { // Puzzles can exist with an empty array if scan found nothing
-                  setScannedPuzzles(prev => new Map(prev).set(currentPage, puzzles.puzzles));
-                  setScannedPages(prev => new Set(prev).add(currentPage));
-              }
-          }
-      };
-      loadPuzzles();
-  }, [currentPage, pdfDoc, pdfId, scannedPuzzles]);
-
-  const handleDeepScan = async () => {
-      await startDeepScan(currentPage, (puzzles) => {
-          setScannedPuzzles(prev => new Map(prev).set(currentPage, puzzles));
-          setScannedPages(prev => new Set(prev).add(currentPage));
-      });
+  const handleZoom = (factor: number) => {
+    const newZoom = Math.max(0.1, Math.min(5, zoom * factor));
+    setZoom(newZoom);
+    setIsOptionsOpen(false);
   };
   
-  const handlePuzzleClick = useCallback((puzzle: DetectedPuzzle, pageNum: number) => {
-    if (onPreScannedPuzzleFound && puzzle.fen) {
-        onPreScannedPuzzleFound(puzzle.fen);
-    } else {
-        const pageWrapper = pageWrapperRefs.current.get(pageNum);
-        const canvas = pageWrapper?.querySelector('canvas');
-        if(!pageWrapper || !canvas) return;
-
-        // Use a 1% expansion for the initial crop box to match the UI overlay
-        const uiBox = expandBox(puzzle.boundingBox, 0.01);
-
-        const boxToCrop: CropBox = {
-            x: uiBox.x * canvas.clientWidth,
-            y: uiBox.y * canvas.clientHeight,
-            width: uiBox.width * canvas.clientWidth,
-            height: uiBox.height * canvas.clientHeight
-        };
-        justFinishedDrawing.current = true;
-        setCropBox(boxToCrop);
-    }
-  }, [onPreScannedPuzzleFound]);
-  
-  const changeZoom = useCallback((newZoomCallback: (prevZoom: number) => number) => { setZoom(prevZoom => Math.max(0.25, Math.min(newZoomCallback(prevZoom), 5.0))); }, []);
-  
-  const handleFitWidth = useCallback(async () => {
-    if (!pdfDoc || !mainViewRef.current) return;
-    try {
-      const page = await pdfDoc.getPage(currentPage);
-      const containerWidth = mainViewRef.current.clientWidth - 48; // Account for padding
-      const viewport = page.getViewport({ scale: 1, rotation: page.rotate });
-      setZoom(containerWidth / viewport.width);
-      page.cleanup();
+  const fitToWidth = () => {
+    if (mainViewRef.current && pageViewport) {
+      const pageEl = pageWrapperRefs.current.get(currentPage);
+      if (pageEl && pageEl.clientHeight > 0) {
+        // Save the scroll position relative to the current page element
+        const ratio = (mainViewRef.current.scrollTop - pageEl.offsetTop) / pageEl.clientHeight;
+        scrollRestoreRef.current = { page: currentPage, ratio };
+      }
+      const containerWidth = mainViewRef.current.clientWidth - 48; // -48 for padding
+      setZoom(containerWidth / pageViewport.width);
       setIsOptionsOpen(false);
-    } catch (e) { console.error("Failed to fit width:", e); }
-  }, [pdfDoc, currentPage]);
-  
-  const handleFitPage = useCallback(async () => {
-    if (!pdfDoc || !mainViewRef.current) return;
-    try {
-        const page = await pdfDoc.getPage(currentPage);
-        const containerWidth = mainViewRef.current.clientWidth - 48;
-        const containerHeight = mainViewRef.current.clientHeight - 48;
-        const viewport = page.getViewport({ scale: 1, rotation: page.rotate });
-        const scaleX = containerWidth / viewport.width;
-        const scaleY = containerHeight / viewport.height;
-        setZoom(Math.min(scaleX, scaleY));
-        page.cleanup();
-        setIsOptionsOpen(false);
-    } catch (e) { console.error("Failed to fit page:", e); }
-  }, [pdfDoc, currentPage]);
-  
-  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => { if (e.ctrlKey) { e.preventDefault(); changeZoom(z => z - e.deltaY * 0.005); }};
-  
-  const handleCropActionPointerDown = (e: React.PointerEvent, mode: 'moving' | 'resizing', handle?: ResizeHandle) => {
-    e.stopPropagation();
-    if (e.button !== 0) return;
-    const pageWrapper = pageWrapperRefs.current.get(currentPage);
-    if (!pageWrapper) return;
-    
-    const rect = pageWrapper.getBoundingClientRect();
-    startDragPoint.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-    originalCropBox.current = cropBox;
-    setCropMode(mode);
-    if (handle) {
-        setActiveResizeHandle(handle);
     }
   };
-  
-  const isPageScanned = scannedPages.has(currentPage);
 
-  if (error) return <div className="card error-container" style={{justifyContent: 'center'}}><h3>Error Loading PDF</h3><p>{error}</p><button className="btn btn-primary" onClick={onBack}>Go Back</button></div>;
+  const fitToPage = () => {
+    if (mainViewRef.current && pageViewport) {
+      const pageEl = pageWrapperRefs.current.get(currentPage);
+      if (pageEl && pageEl.clientHeight > 0) {
+        // Save the scroll position relative to the current page element
+        const ratio = (mainViewRef.current.scrollTop - pageEl.offsetTop) / pageEl.clientHeight;
+        scrollRestoreRef.current = { page: currentPage, ratio };
+      }
+      const containerWidth = mainViewRef.current.clientWidth - 48;
+      const containerHeight = mainViewRef.current.clientHeight - 48;
+      const scaleX = containerWidth / pageViewport.width;
+      const scaleY = containerHeight / pageViewport.height;
+      setZoom(Math.min(scaleX, scaleY));
+      setIsOptionsOpen(false);
+    }
+  };
+
+  const scanCompleted = scannedPages.has(currentPage) && (scannedPuzzles.get(currentPage)?.length ?? 0) > 0;
 
   return (
     <div className="pdf-viewer-container">
-      <div className="pdf-toolbar">
-        <div className="pdf-toolbar-left">
-          <button className="btn-icon" onClick={onBack} title="Back"><BackIcon /></button>
-        </div>
-        <div className="pdf-toolbar-center">
-            <div className={`pdf-toolbar-group ${isOptionsOpen ? 'dropdown-active' : ''}`}>
-                <div className="options-menu-container" ref={optionsMenuRef}>
-                    <button className="btn-icon" onClick={() => setIsOptionsOpen(o => !o)} title="View Options">
+        <div className="pdf-toolbar">
+            <div className="pdf-toolbar-left">
+                <button className="btn-icon-bare" onClick={handleBack} title="Go back" aria-label="Go back">
+                    <BackIcon />
+                </button>
+            </div>
+
+            <div className="pdf-toolbar-center">
+                 <div ref={optionsMenuRef} className={`pdf-toolbar-group ${isOptionsOpen ? 'dropdown-active' : ''}`}>
+                    <button className="btn-icon" onClick={() => setIsOptionsOpen(prev => !prev)} aria-haspopup="true" aria-expanded={isOptionsOpen} title="View Options">
                         <OptionsIcon />
                     </button>
                     {isOptionsOpen && (
                         <div className="options-dropdown">
-                            <button onClick={handleFitWidth}><FitToWidthIcon /> <span>Fit to Width</span></button>
-                            <button onClick={handleFitPage}><FitPageIcon /> <span>Fit to Page</span></button>
+                            <button onClick={() => handleZoom(1.25)}><ZoomInIcon /> Zoom In</button>
+                            <button onClick={() => handleZoom(0.8)}><ZoomOutIcon /> Zoom Out</button>
+                            <button onClick={fitToWidth}><FitToWidthIcon /> Fit to Width</button>
+                            <button onClick={fitToPage}><FitPageIcon /> Fit to Page</button>
                         </div>
                     )}
                 </div>
-            </div>
-            <div className="pdf-toolbar-group">
-              <button className="btn-icon" onClick={() => changeZoom(z => z / 1.25)} title="Zoom Out"><ZoomOutIcon/></button>
-              <button className="btn-icon" onClick={() => changeZoom(z => z * 1.25)} title="Zoom In"><ZoomInIcon/></button>
-            </div>
-            <div className="pdf-toolbar-group">
-              <button className="btn-icon" onClick={prevPage} disabled={currentPage <= 1}><PrevMoveIcon /></button>
-              <div className="page-input-container">
-                  <input className="page-input" value={pageInput} onChange={(e) => setPageInput(e.target.value)} onBlur={onPageInputBlur} onKeyDown={(e) => e.key === "Enter" && onPageInputBlur()} />
-                  <span className="page-total">/ {numPages || "..."}</span>
-              </div>
-              <button className="btn-icon" onClick={nextPage} disabled={currentPage >= numPages}><NextMoveIcon /></button>
-            </div>
-        </div>
-        <div className="pdf-toolbar-right">
-            <button className={`btn-icon btn-icon-bare ${isPageScanned && !isDeepScanning ? 'completed-scan' : ''}`} onClick={handleDeepScan} disabled={isDeepScanning} title={isPageScanned ? "Page Scanned" : "Deep Scan page for puzzles"}>
-                {isDeepScanning ? <div className="spinner-small" /> : isPageScanned ? <CheckIcon/> : <DeepScanIcon />}
-            </button>
-        </div>
-      </div>
-      <div className="pdf-body">
-        <aside className="pdf-filmstrip" style={{ width: 120 }}><div className="pdf-filmstrip-scroller">{isDocLoading && <div className="thumb-loading">Loading PDF...</div>}{Array.from({ length: numPages }, (_, i) => i + 1).map(pageNumber => (<div key={`thumb_wrapper_${pageNumber}`} ref={el => { thumbRefs.current.set(pageNumber, el); }}><ThumbRenderer pdfDoc={pdfDoc} thumb={thumbs.get(pageNumber)} onThumbGenerated={handleThumbGenerated} pageNumber={pageNumber} currentPage={currentPage} onClick={() => handleThumbClick(pageNumber)} /></div>))}</div></aside>
-        <div className={`pdf-main-view ${cropMode !== 'idle' ? 'cropping-active' : ''}`} ref={mainViewRef} onScroll={handleScroll} onWheel={handleWheel}>
-          {(isDocLoading) && (<div className="pdf-loading-overlay"><div className="spinner" /><p>Loading PDF...</p></div>)}
-          {!isDocLoading && pdfDoc && (<div className="pdf-main-view-scroller">{pageViewport && Array.from({ length: numPages }, (_, i) => i + 1).map(pageNumber => { const isVisible = Math.abs(pageNumber - currentPage) <= PAGE_BUFFER; return (<div data-page-number={pageNumber} key={`wrapper_${pageNumber}`} ref={el => { pageWrapperRefs.current.set(pageNumber, el); }} className="pdf-page-wrapper" onPointerDown={e => handlePagePointerDown(e, pageNumber)}><PageRenderer pdfDoc={pdfDoc} pageNumber={pageNumber} scale={zoom} isVisible={isVisible} puzzles={scannedPuzzles.get(pageNumber) || []} onPuzzleClick={handlePuzzleClick} placeholderHeight={pageViewport.height * zoom} placeholderWidth={pageViewport.width * zoom} /> {isDeepScanning && currentPage === pageNumber && (
-            <div className="pdf-page-scan-overlay">
-                <div className="spinner" />
-                <p>{scanProgress?.message || "Scanning..."}</p>
-                {scanProgress?.total > 0 && <progress value={scanProgress.current} max={scanProgress.total} />}
-                <button onClick={cancelDeepScan} className="btn btn-secondary">Cancel</button>
-            </div>
-          )} {currentPage === pageNumber && (<div className="pdf-crop-layer">{cropBox && cropBox.width > 5 && cropBox.height > 5 && (
-            <div className="crop-box" style={{ left: cropBox.x, top: cropBox.y, width: cropBox.width, height: cropBox.height }} onPointerDown={(e) => handleCropActionPointerDown(e, 'moving')}>
-                {(["nw", "ne", "sw", "se", "n", "s", "w", "e"] as ResizeHandle[]).map(handle => ( <div key={handle} className={`resize-handle resize-handle-${handle}`} onPointerDown={(e) => handleCropActionPointerDown(e, 'resizing', handle)}/>))}
-                <div className="crop-actions">
-                    <button className="btn-icon btn-confirm" onClick={() => handleConfirmCrop()} disabled={isConfirming} onPointerDown={e => e.stopPropagation()}>
-                        {isConfirming ? <div className="spinner-small"></div> : <CheckIcon />}
+                <div className="pdf-toolbar-group zoom-controls-group">
+                    <button className="btn-icon" onClick={() => handleZoom(0.8)} title="Zoom Out"><ZoomOutIcon /></button>
+                    <button className="btn-icon" onClick={() => handleZoom(1.25)} title="Zoom In"><ZoomInIcon /></button>
+                </div>
+                 <div className="pdf-toolbar-group">
+                    <button className="btn-icon" onClick={() => scrollToPage(Math.max(1, currentPage - 1))} disabled={currentPage <= 1} title="Previous Page">
+                        <PrevMoveIcon />
                     </button>
-                    <button className="btn-icon" onClick={() => setCropBox(null)} onPointerDown={e => e.stopPropagation()}>
-                        <CloseIcon />
+                    <div className="page-input-container">
+                        <form onSubmit={handlePageInputSubmit} style={{ display: 'contents' }}>
+                            <input type="text" value={pageInput} onChange={handlePageInputChange} onBlur={(e) => handlePageInputSubmit(e as any)} className="page-input" aria-label="Current page number" />
+                        </form>
+                        <span className="page-total">/ {numPages}</span>
+                    </div>
+                    <button className="btn-icon" onClick={() => scrollToPage(Math.min(numPages, currentPage + 1))} disabled={currentPage >= numPages} title="Next Page">
+                        <NextMoveIcon />
                     </button>
                 </div>
             </div>
-          )}</div>)}</div>);})}</div>)}
+            
+            <div className="pdf-toolbar-right">
+                <button 
+                    className={`btn-icon-bare deep-scan-btn ${scanCompleted ? 'completed-scan' : ''}`}
+                    onClick={isDeepScanning ? cancelDeepScan : handleDeepScan}
+                    disabled={isDocLoading || cropMode !== 'idle'}
+                    title={isDeepScanning ? "Cancel Scan" : scanCompleted ? "Re-scan Page" : "Scan page for all puzzles"}
+                >
+                    {isDeepScanning ? <div className="spinner-small" /> : <DeepScanIcon />}
+                </button>
+            </div>
+        </div>
+        
+      <div className="pdf-body">
+        <div className="pdf-filmstrip">
+            <div className="pdf-filmstrip-scroller">
+            {isDocLoading ? <div className="thumb-loading">Loading PDF...</div> :
+                Array.from({ length: numPages }, (_, i) => i + 1).map(pageNum => (
+                    <div key={pageNum} ref={el => thumbRefs.current.set(pageNum, el)}>
+                        <ThumbRenderer
+                            pdfDoc={pdfDoc}
+                            pageNumber={pageNum}
+                            currentPage={currentPage}
+                            onClick={() => scrollToPage(pageNum)}
+                            thumb={thumbs.get(pageNum)}
+                            onThumbGenerated={handleThumbGenerated}
+                        />
+                    </div>
+                ))
+            }
+            </div>
+        </div>
+
+        <div className="pdf-main-view" ref={mainViewRef} onScroll={handleScroll}>
+            {isDocLoading && ( <div className="pdf-loading-overlay"><div className="spinner"></div><p>Loading document...</p></div> )}
+            <div className="pdf-main-view-scroller">{renderPages()}</div>
         </div>
       </div>
     </div>

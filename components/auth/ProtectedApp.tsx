@@ -30,7 +30,7 @@ import { usePdfManager } from '../../hooks/usePdfManager';
 import { fenToBoardState } from '../../lib/fenUtils';
 import { dataUrlToBlob, computeImageHash, generateBoardThumbnail, determineTurnFromImage } from '../../lib/utils';
 import { db } from '../../lib/db';
-import type { AppState, PieceColor, AnalysisDetails, HistoryEntry, User } from '../../lib/types';
+import type { AppState, PieceColor, AnalysisDetails, HistoryEntry, User, DetectedPuzzle } from '../../lib/types';
 import { ConfirmationDialog } from '../ui/ConfirmationDialog';
 
 type AnalysisResult = {
@@ -87,6 +87,7 @@ export const ProtectedApp = ({
     const [pdfToSync, setPdfToSync] = useState<number | null>(null);
     const [isCameraAvailable, setIsCameraAvailable] = useState<boolean>(true);
     const [scanFlowOrigin, setScanFlowOrigin] = useState<AppState>('initial');
+    const [multiPuzzleContext, setMultiPuzzleContext] = useState<{ imageFile: File, puzzles: DetectedPuzzle[] } | null>(null);
 
 
     const {
@@ -203,6 +204,7 @@ export const ProtectedApp = ({
         setInitialGameHistory(null);
         setLoadedGameId(undefined);
         setScanFlowOrigin('initial');
+        setMultiPuzzleContext(null);
         setAppState('initial');
     }, [setAppState, clearSelectedPdf]);
 
@@ -272,9 +274,10 @@ export const ProtectedApp = ({
     
     const handleFileSelect = (file: File, origin: AppState) => {
         if (isGuestPastTrial) return onAuthRequired();
+        setMultiPuzzleContext(null);
         setScanFlowOrigin(origin);
         setImageData(file);
-        handleCropConfirm(file, 0);
+        setAppState('preview');
     };
 
     const handlePdfSelect = async (file: File) => {
@@ -286,6 +289,7 @@ export const ProtectedApp = ({
 
     const handleCameraSelect = () => {
         if (isGuestPastTrial) return onAuthRequired();
+        setMultiPuzzleContext(null);
         setScanFlowOrigin('camera');
         setAppState('camera');
     };
@@ -312,15 +316,13 @@ export const ProtectedApp = ({
         await handleCropConfirm(file, clientProcessingTime);
     };
 
+    // This handles both clicks on puzzle overlays and auto-selection of a single puzzle
     const handlePreScannedPuzzleFound = (fen: string) => {
         soundManager.play('UI_CLICK');
 
-        // If we're coming from the PDF viewer's deep scan results,
-        // set the origin so "Next Puzzle" knows where to return.
         if (appState === 'pdfViewer') {
             setScanFlowOrigin('pdfViewer');
         }
-        // For ImagePreview, scanFlowOrigin is already correctly set by handleFileSelect/handleCameraSelect.
         
         setAnalysisResult({
             fen: fen,
@@ -333,6 +335,10 @@ export const ProtectedApp = ({
         setInitialGameHistory(null);
         setLoadedGameId(undefined);
         setAppState('solve');
+    };
+    
+    const handleMultiPuzzleFound = (puzzles: DetectedPuzzle[], imageFile: File) => {
+        setMultiPuzzleContext({ puzzles, imageFile });
     };
 
     const handleContinueManually = () => {
@@ -402,7 +408,19 @@ export const ProtectedApp = ({
 
     const handleAnalyze = (fen: string) => {
         soundManager.play('UI_CLICK');
-        setAnalysisResult({ ...analysisResult!, fen });
+        // This function is now used for both editor -> solve and preview -> solve
+        if (appState === 'result') {
+            setAnalysisResult({ ...analysisResult!, fen });
+        } else {
+             setAnalysisResult({
+                fen: fen,
+                turn: fenToBoardState(fen).turn,
+                details: { confidence: null, reasoning: 'Loaded from multi-puzzle scan.', uncertainSquares: [] },
+                scanDuration: null,
+                clientProcessingTime: null,
+                serverProcessingTime: null,
+            });
+        }
         setInitialGameHistory(null);
         setLoadedGameId(undefined);
         setAppState('solve');
@@ -419,6 +437,11 @@ export const ProtectedApp = ({
             return;
         }
     
+        if (multiPuzzleContext) {
+            setAppState('preview');
+            return;
+        }
+
         if (scanFlowOrigin === 'pdfViewer') {
             setAppState('pdfViewer');
         } else if (scanFlowOrigin === 'camera') {
@@ -504,7 +527,12 @@ export const ProtectedApp = ({
             case 'camera':
                 return <CameraView onCapture={(file) => handleFileSelect(file, 'camera')} onBack={resetToInitial} />;
             case 'preview':
-                return imageData && <ImagePreview imageFile={imageData} onPuzzleSelect={handlePreScannedPuzzleFound} onBack={resetToInitial} />;
+                return imageData && <ImagePreview 
+                                        imageFile={imageData} 
+                                        onPuzzleSelect={handlePreScannedPuzzleFound} 
+                                        onMultiPuzzleFound={handleMultiPuzzleFound}
+                                        onBack={resetToInitial} 
+                                    />;
             case 'pdfViewer':
                 return selectedPdf && <PdfView 
                     pdfId={selectedPdf.id}
