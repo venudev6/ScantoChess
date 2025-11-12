@@ -2,7 +2,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import React, { useCallback, useEffect, useRef, useState, memo, useLayoutEffect } from "react";
+import React, { useCallback, useEffect, useRef, useState, memo, useLayoutEffect, useMemo } from "react";
 import * as pdfjsLib from "pdfjs-dist";
 import { useInView } from "react-intersection-observer";
 import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from "pdfjs-dist";
@@ -72,7 +72,47 @@ interface PdfViewProps {
   onPreScannedPuzzleFound?: (fen: string) => void;
 }
 
-// Virtualized Page Renderer
+const PdfView: React.FC<PdfViewProps> = ({
+  pdfId, pdfFile, initialPage = 1, initialZoom = 1.0, onCropConfirm, onBack,
+  onStateChange, onPreScannedPuzzleFound,
+}) => {
+  const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null);
+  const [numPages, setNumPages] = useState(0);
+  const [currentPage, setCurrentPage] = useState(initialPage);
+  const [pageInput, setPageInput] = useState(String(initialPage));
+  const [thumbs, setThumbs] = useState<Map<number, string>>(new Map());
+  const [isDocLoading, setIsDocLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [zoom, setZoom] = useState(initialZoom);
+  const [pageViewport, setPageViewport] = useState<{width: number, height: number} | null>(null);
+  const [pageViewports, setPageViewports] = useState<Map<number, {width: number, height: number}>>(new Map());
+  const [isOptionsOpen, setIsOptionsOpen] = useState(false);
+  const [filmstripNode, setFilmstripNode] = useState<HTMLDivElement | null>(null);
+  
+  const mainViewRef = useRef<HTMLDivElement>(null);
+  const optionsMenuRef = useRef<HTMLDivElement>(null);
+  const pageWrapperRefs = useRef<Map<number, HTMLDivElement | null>>(new Map());
+  const thumbRefs = useRef<Map<number, HTMLDivElement | null>>(new Map());
+  
+  const { isDeepScanning, scanProgress, startDeepScan, cancelDeepScan } = usePdfDeepScan(pdfDoc, pdfId);
+  const [scannedPuzzles, setScannedPuzzles] = useState<Map<number, DetectedPuzzle[]>>(new Map());
+  const [scannedPages, setScannedPages] = useState<Set<number>>(new Set());
+
+  const [isConfirming, setIsConfirming] = useState(false);
+  const [cropBox, setCropBox] = useState<CropBox | null>(null);
+  const [cropMode, setCropMode] = useState<CropMode>('idle');
+  const [activeResizeHandle, setActiveResizeHandle] = useState<ResizeHandle | null>(null);
+  const startDragPoint = useRef({ x: 0, y: 0 });
+  const originalCropBox = useRef<CropBox | null>(null);
+  const justFinishedDrawing = useRef(false);
+  
+  const scrollRestoreRef = useRef<{ page: number, ratio: number } | null>(null);
+  const isScrollingProgrammatically = useRef(false);
+  const scrollTimeout = useRef<any>(null);
+  const initialScrollDone = useRef(false);
+  const emptyPuzzles = useMemo(() => [], []);
+
+  // Virtualized Page Renderer
 const PageRenderer = memo(({ pdfDoc, pageNumber, scale, isVisible, puzzles, onPuzzleClick, placeholderHeight, placeholderWidth }: {
   pdfDoc: PDFDocumentProxy | null,
   pageNumber: number,
@@ -177,7 +217,7 @@ const ThumbRenderer = memo(({ pdfDoc, pageNumber, currentPage, onClick, thumb, o
   thumb: string | undefined;
   onThumbGenerated: (pageNum: number, dataUrl: string) => void;
 }) => {
-  const { ref, inView } = useInView({ rootMargin: '400px 0px', triggerOnce: true });
+  const { ref, inView } = useInView({ root: filmstripNode, rootMargin: '400px 0px', triggerOnce: true });
   const renderTaskRef = useRef<RenderTask | null>(null);
   const hasGenerated = useRef(false);
 
@@ -247,42 +287,6 @@ const ThumbRenderer = memo(({ pdfDoc, pageNumber, currentPage, onClick, thumb, o
   );
 });
 
-const PdfView: React.FC<PdfViewProps> = ({
-  pdfId, pdfFile, initialPage = 1, initialZoom = 1.0, onCropConfirm, onBack,
-  onStateChange, onPreScannedPuzzleFound,
-}) => {
-  const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null);
-  const [numPages, setNumPages] = useState(0);
-  const [currentPage, setCurrentPage] = useState(initialPage);
-  const [pageInput, setPageInput] = useState(String(initialPage));
-  const [thumbs, setThumbs] = useState<Map<number, string>>(new Map());
-  const [isDocLoading, setIsDocLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [zoom, setZoom] = useState(initialZoom);
-  const [pageViewport, setPageViewport] = useState<{width: number, height: number} | null>(null);
-  const [isOptionsOpen, setIsOptionsOpen] = useState(false);
-  
-  const mainViewRef = useRef<HTMLDivElement>(null);
-  const optionsMenuRef = useRef<HTMLDivElement>(null);
-  const pageWrapperRefs = useRef<Map<number, HTMLDivElement | null>>(new Map());
-  const thumbRefs = useRef<Map<number, HTMLDivElement | null>>(new Map());
-  
-  const { isDeepScanning, scanProgress, startDeepScan, cancelDeepScan } = usePdfDeepScan(pdfDoc, pdfId);
-  const [scannedPuzzles, setScannedPuzzles] = useState<Map<number, DetectedPuzzle[]>>(new Map());
-  const [scannedPages, setScannedPages] = useState<Set<number>>(new Set());
-
-  const [isConfirming, setIsConfirming] = useState(false);
-  const [cropBox, setCropBox] = useState<CropBox | null>(null);
-  const [cropMode, setCropMode] = useState<CropMode>('idle');
-  const [activeResizeHandle, setActiveResizeHandle] = useState<ResizeHandle | null>(null);
-  const startDragPoint = useRef({ x: 0, y: 0 });
-  const originalCropBox = useRef<CropBox | null>(null);
-  const justFinishedDrawing = useRef(false);
-  
-  const scrollRestoreRef = useRef<{ page: number, ratio: number } | null>(null);
-  const isScrollingProgrammatically = useRef(false);
-  const scrollTimeout = useRef<any>(null);
-
   useLayoutEffect(() => {
     if (scrollRestoreRef.current && mainViewRef.current) {
         const { page, ratio } = scrollRestoreRef.current;
@@ -319,31 +323,9 @@ const PdfView: React.FC<PdfViewProps> = ({
         
         const firstPage = await pdf.getPage(1);
         const viewport = firstPage.getViewport({ scale: 1, rotation: firstPage.rotate });
-        setPageViewport({ width: viewport.width, height: viewport.height });
-        
-        // If a specific zoom was passed (e.g., from DB), use it. Otherwise, calculate a smart default.
-        if (initialZoom && initialZoom !== 1.0) {
-            setZoom(initialZoom);
-        } else {
-            // Wait a tick for the main view ref to be available for calculations.
-            setTimeout(() => {
-                if (mainViewRef.current) {
-                    const isMobile = window.innerWidth <= 768;
-                    if (isMobile) {
-                        // Fit to width for mobile
-                        const containerWidth = mainViewRef.current.clientWidth - 48; // -48 for padding
-                        setZoom(containerWidth / viewport.width);
-                    } else {
-                        // Fit page for desktop
-                        const containerWidth = mainViewRef.current.clientWidth - 48;
-                        const containerHeight = mainViewRef.current.clientHeight - 48;
-                        const scaleX = containerWidth / viewport.width;
-                        const scaleY = containerHeight / viewport.height;
-                        setZoom(Math.min(scaleX, scaleY));
-                    }
-                }
-            }, 0);
-        }
+        const firstPageViewport = { width: viewport.width, height: viewport.height };
+        setPageViewport(firstPageViewport);
+        setPageViewports(prev => new Map(prev).set(1, firstPageViewport));
         
         firstPage.cleanup();
         setIsDocLoading(false);
@@ -358,31 +340,107 @@ const PdfView: React.FC<PdfViewProps> = ({
     return () => {
         loadingTask.destroy();
     };
-  }, [pdfFile, initialZoom]);
-  
-  const scrollToPage = useCallback((pageNumber: number, behavior: 'smooth' | 'auto' = 'smooth') => {
-    const pageEl = pageWrapperRefs.current.get(pageNumber);
-    if (pageEl && mainViewRef.current) {
-        isScrollingProgrammatically.current = true;
-        mainViewRef.current.scrollTo({ top: pageEl.offsetTop - 24, behavior });
-        setCurrentPage(pageNumber);
-        setPageInput(String(pageNumber));
-        clearTimeout(scrollTimeout.current);
-        // FIX: Increased timeout to 1000ms for smooth scroll to prevent premature firing of manual scroll handler.
-        scrollTimeout.current = setTimeout(() => { isScrollingProgrammatically.current = false; }, behavior === 'smooth' ? 1000 : 50);
-    }
-  }, []);
+  }, [pdfFile]);
 
   useEffect(() => {
-    if (!isDocLoading && pdfDoc) {
-      const timer = setTimeout(() => {
-        scrollToPage(initialPage, 'auto');
-      }, 100);
-      return () => clearTimeout(timer);
-    }
-  }, [isDocLoading, pdfDoc, initialPage, scrollToPage]);
+    if (!pdfDoc || numPages === 0) return;
 
+    const pagesToLoad = new Set<number>();
+    for (let i = Math.max(1, currentPage - PAGE_BUFFER); i <= Math.min(numPages, currentPage + PAGE_BUFFER); i++) {
+        if (!pageViewports.has(i)) {
+            pagesToLoad.add(i);
+        }
+    }
+
+    if (pagesToLoad.size > 0) {
+        Promise.all(Array.from(pagesToLoad).map(async pageNum => {
+            try {
+                const page = await pdfDoc.getPage(pageNum);
+                const viewport = page.getViewport({ scale: 1.0, rotation: page.rotate });
+                page.cleanup();
+                return { pageNum, viewport: { width: viewport.width, height: viewport.height } };
+            } catch (e) {
+                console.error(`Failed to get viewport for page ${pageNum}`, e);
+                return null;
+            }
+        })).then(results => {
+            setPageViewports(prev => {
+                const newMap = new Map(prev);
+                results.forEach(res => {
+                    if (res) {
+                        newMap.set(res.pageNum, res.viewport);
+                    }
+                });
+                return newMap;
+            });
+        });
+    }
+  }, [currentPage, pdfDoc, numPages]);
   
+  useLayoutEffect(() => {
+    if (isDocLoading || !pageViewport || !mainViewRef.current) {
+      return; // Wait until the doc is loaded and we have dimensions
+    }
+    
+    // If a specific zoom was passed (e.g., from DB), use it. Otherwise, calculate a smart default.
+    if (initialZoom && initialZoom !== 1.0) {
+        setZoom(initialZoom);
+    } else {
+        const viewport = pageViewport;
+        const isMobile = window.innerWidth <= 768;
+        if (isMobile) {
+            // Fit to width for mobile
+            const containerWidth = mainViewRef.current.clientWidth - 48; // -48 for padding
+            setZoom(containerWidth / viewport.width);
+        } else {
+            // Fit page for desktop
+            const containerWidth = mainViewRef.current.clientWidth - 48;
+            const containerHeight = mainViewRef.current.clientHeight - 48;
+            const scaleX = containerWidth / viewport.width;
+            const scaleY = containerHeight / viewport.height;
+            setZoom(Math.min(scaleX, scaleY));
+        }
+    }
+  }, [isDocLoading, pageViewport, initialZoom]);
+  
+  const scrollToPage = useCallback((pageNumber: number, behavior: 'smooth' | 'auto' = 'smooth') => {
+    isScrollingProgrammatically.current = true;
+    
+    setCurrentPage(pageNumber);
+    setPageInput(String(pageNumber));
+
+    const pageEl = pageWrapperRefs.current.get(pageNumber);
+    const view = mainViewRef.current;
+    if (pageEl && view) {
+        let scrollTop = pageEl.offsetTop - 24; // Default scroll to top with padding.
+        
+        // If page is shorter than viewport, center it vertically.
+        if (pageEl.clientHeight < view.clientHeight) {
+            scrollTop = pageEl.offsetTop - ((view.clientHeight - pageEl.clientHeight) / 2);
+        }
+
+        view.scrollTo({ top: Math.max(0, scrollTop), behavior });
+        
+        // Sync thumbnail
+        const thumbEl = thumbRefs.current.get(pageNumber);
+        if (thumbEl) {
+            thumbEl.scrollIntoView({ behavior, block: 'center' });
+        }
+    }
+    
+    clearTimeout(scrollTimeout.current);
+    scrollTimeout.current = setTimeout(() => { isScrollingProgrammatically.current = false; }, behavior === 'smooth' ? 1000 : 50);
+  }, []);
+
+  useLayoutEffect(() => {
+    // Only scroll once after the doc is loaded and zoom has likely been set.
+    // We check initialScrollDone to ensure this only runs on the very first load sequence.
+    if (!isDocLoading && pdfDoc && !initialScrollDone.current) {
+        initialScrollDone.current = true;
+        scrollToPage(initialPage, 'auto');
+    }
+  }, [isDocLoading, pdfDoc, initialPage, scrollToPage, zoom]);
+
   const debouncedOnStateChange = useRef(debounce((id: number, page: number, z: number) => { onStateChange?.(id, page, z); }, 1000)).current;
 
   useEffect(() => {
@@ -411,7 +469,11 @@ const PdfView: React.FC<PdfViewProps> = ({
         if (bestVisiblePage !== currentPage) {
             setCurrentPage(bestVisiblePage);
             setPageInput(String(bestVisiblePage));
-            thumbRefs.current.get(bestVisiblePage)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            const thumbEl = thumbRefs.current.get(bestVisiblePage);
+            if (thumbEl) {
+                // Sync thumbnail view
+                thumbEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
         }
     }, 150);
   }, [currentPage]);
@@ -637,72 +699,8 @@ const PdfView: React.FC<PdfViewProps> = ({
     }
   }, [currentPage, pdfId, scannedPages]);
   
-  
-  const renderPages = () => {
-    if (!pdfDoc || !pageViewport) return null;
-    const pages = [];
-    const minPage = Math.max(1, currentPage - PAGE_BUFFER);
-    const maxPage = Math.min(numPages, currentPage + PAGE_BUFFER);
-
-    for (let i = 1; i <= numPages; i++) {
-        const isVisible = i >= minPage && i <= maxPage;
-        const pagePuzzles = scannedPuzzles.get(i) || [];
-        
-        pages.push(
-// FIX: The ref callback should not have a return value. Added curly braces to make it a statement block.
-          <div 
-            key={i} 
-            ref={el => { pageWrapperRefs.current.set(i, el) }} 
-            className="pdf-page-wrapper"
-            onPointerDown={(e) => handlePagePointerDown(e, i)}
-          >
-            <PageRenderer 
-              pdfDoc={pdfDoc} 
-              pageNumber={i}
-              scale={zoom}
-              isVisible={isVisible}
-              puzzles={pagePuzzles}
-              onPuzzleClick={onPreScannedPuzzleFound ? (puzzle) => onPreScannedPuzzleFound(puzzle.fen) : ()=>{}}
-              placeholderHeight={pageViewport.height * zoom}
-              placeholderWidth={pageViewport.width * zoom}
-            />
-            {isDeepScanning && i === currentPage && (
-                <div className="pdf-page-scan-overlay">
-                    <div className="spinner" />
-                    <p>{scanProgress.message}</p>
-                    {scanProgress.total > 0 && <progress value={scanProgress.current} max={scanProgress.total} />}
-                    <button className="btn btn-secondary" onClick={cancelDeepScan}>Cancel</button>
-                </div>
-            )}
-             {cropBox && i === currentPage && (
-                <div className="pdf-crop-layer">
-                    <div 
-                        className="crop-box" 
-                        style={{ left: cropBox.x, top: cropBox.y, width: cropBox.width, height: cropBox.height }}
-                        onPointerDown={handleCropBoxPointerDown}
-                        onPointerUp={(e) => e.stopPropagation()} // Prevent page pointer up
-                    >
-                        {(['nw', 'ne', 'sw', 'se', 'n', 's', 'w', 'e'] as ResizeHandle[]).map(handle => (
-                            <div 
-                                key={handle} 
-                                className={`resize-handle resize-handle-${handle}`}
-                                onPointerDown={(e) => handleResizeHandlePointerDown(e, handle)}
-                            />
-                        ))}
-                        {isConfirming && (
-                            <div className="crop-actions">
-                                <button className="btn-icon" onClick={() => { setCropBox(null); setIsConfirming(false); }} aria-label="Cancel crop"><CloseIcon /></button>
-                                <button className="btn-icon btn-confirm" onClick={handleConfirmCrop} aria-label="Confirm crop"><CheckIcon /></button>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            )}
-          </div>
-        );
-    }
-    return pages;
-  };
+  const minPage = Math.max(1, currentPage - PAGE_BUFFER);
+  const maxPage = Math.min(numPages, currentPage + PAGE_BUFFER);
   
   const handleBack = () => {
     if (isDeepScanning) cancelDeepScan();
@@ -753,9 +751,8 @@ const PdfView: React.FC<PdfViewProps> = ({
       }
       const containerWidth = mainViewRef.current.clientWidth - 48;
       const containerHeight = mainViewRef.current.clientHeight - 48;
-// FIX: Cannot find name 'viewport'.
       const scaleX = containerWidth / pageViewport.width;
-// FIX: Cannot find name 'viewport'.
+      // FIX: Corrected a typo from `viewport.height` to `pageViewport.height`.
       const scaleY = containerHeight / pageViewport.height;
       setZoom(Math.min(scaleX, scaleY));
       setIsOptionsOpen(false);
@@ -808,23 +805,23 @@ const PdfView: React.FC<PdfViewProps> = ({
             </div>
             
             <div className="pdf-toolbar-right">
-                <button 
-                    className={`btn-icon-bare deep-scan-btn ${scanCompleted ? 'completed-scan' : ''}`}
+                <button
+                    className={`btn btn-secondary deep-scan-btn ${scanCompleted ? 'completed-scan' : ''}`}
                     onClick={isDeepScanning ? cancelDeepScan : handleDeepScan}
                     disabled={isDocLoading || cropMode !== 'idle'}
                     title={isDeepScanning ? "Cancel Scan" : scanCompleted ? "Re-scan Page" : "Scan page for all puzzles"}
                 >
                     {isDeepScanning ? <div className="spinner-small" /> : <DeepScanIcon />}
+                    <span>{isDeepScanning ? 'Scanning...' : scanCompleted ? 'Re-scan' : 'Scan'}</span>
                 </button>
             </div>
         </div>
         
       <div className="pdf-body">
-        <div className="pdf-filmstrip">
+        <div className="pdf-filmstrip" ref={setFilmstripNode}>
             <div className="pdf-filmstrip-scroller">
             {isDocLoading ? <div className="thumb-loading">Loading PDF...</div> :
                 Array.from({ length: numPages }, (_, i) => i + 1).map(pageNum => (
-// FIX: The ref callback should not have a return value. Added curly braces to make it a statement block.
                     <div key={pageNum} ref={el => { thumbRefs.current.set(pageNum, el); }}>
                         <ThumbRenderer
                             pdfDoc={pdfDoc}
@@ -842,7 +839,65 @@ const PdfView: React.FC<PdfViewProps> = ({
 
         <div className="pdf-main-view" ref={mainViewRef} onScroll={handleScroll}>
             {isDocLoading && ( <div className="pdf-loading-overlay"><div className="spinner"></div><p>Loading document...</p></div> )}
-            <div className="pdf-main-view-scroller">{renderPages()}</div>
+            <div className="pdf-main-view-scroller">
+                {!isDocLoading && pdfDoc && pageViewport && Array.from({ length: numPages }, (_, i) => i + 1).map(pageNum => {
+                    const isVisible = pageNum >= minPage && pageNum <= maxPage;
+                    const pagePuzzles = scannedPuzzles.get(pageNum) || emptyPuzzles;
+                    const vp = pageViewports.get(pageNum) || pageViewport;
+                    
+                    return (
+                        <div 
+                        key={pageNum} 
+                        ref={el => { pageWrapperRefs.current.set(pageNum, el) }} 
+                        className="pdf-page-wrapper"
+                        onPointerDown={(e) => handlePagePointerDown(e, pageNum)}
+                        >
+                        <PageRenderer 
+                            pdfDoc={pdfDoc} 
+                            pageNumber={pageNum}
+                            scale={zoom}
+                            isVisible={isVisible}
+                            puzzles={pagePuzzles}
+                            onPuzzleClick={onPreScannedPuzzleFound ? (puzzle) => onPreScannedPuzzleFound(puzzle.fen) : ()=>{}}
+                            placeholderHeight={vp.height * zoom}
+                            placeholderWidth={vp.width * zoom}
+                        />
+                        {isDeepScanning && pageNum === currentPage && (
+                            <div className="pdf-page-scan-overlay">
+                                <div className="spinner" />
+                                <p>{scanProgress.message}</p>
+                                {scanProgress.total > 0 && <progress value={scanProgress.current} max={scanProgress.total} />}
+                                <button className="btn btn-secondary" onClick={cancelDeepScan}>Cancel</button>
+                            </div>
+                        )}
+                        {cropBox && pageNum === currentPage && (
+                            <div className="pdf-crop-layer">
+                                <div 
+                                    className="crop-box" 
+                                    style={{ left: cropBox.x, top: cropBox.y, width: cropBox.width, height: cropBox.height }}
+                                    onPointerDown={handleCropBoxPointerDown}
+                                    onPointerUp={(e) => e.stopPropagation()} // Prevent page pointer up
+                                >
+                                    {(['nw', 'ne', 'sw', 'se', 'n', 's', 'w', 'e'] as ResizeHandle[]).map(handle => (
+                                        <div 
+                                            key={handle} 
+                                            className={`resize-handle resize-handle-${handle}`}
+                                            onPointerDown={(e) => handleResizeHandlePointerDown(e, handle)}
+                                        />
+                                    ))}
+                                    {isConfirming && (
+                                        <div className="crop-actions">
+                                            <button className="btn-icon" onClick={() => { setCropBox(null); setIsConfirming(false); }} aria-label="Cancel crop"><CloseIcon /></button>
+                                            <button className="btn-icon btn-confirm" onClick={handleConfirmCrop} aria-label="Confirm crop"><CheckIcon /></button>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                        </div>
+                    );
+                })}
+            </div>
         </div>
       </div>
     </div>

@@ -97,7 +97,7 @@ const UserPanel = ({ user, isLoggedIn, onLogout, onAdminPanelClick, onSavedGames
 
     if (!isLoggedIn || !user) {
         return (
-            <aside className="user-panel guest-panel">
+            <aside className={`user-panel guest-panel ${displayMode}-panel`}>
                 <div className="user-panel-header" onClick={onLoginClick}>
                     <div className="user-avatar"><UserCircleIcon /></div>
                     <div className="user-info">

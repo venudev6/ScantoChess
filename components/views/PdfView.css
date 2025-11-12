@@ -312,9 +312,31 @@
 .btn-icon-bare:hover:not(:disabled) svg {
     color: var(--text-color);
 }
-.btn-icon-bare.completed-scan svg {
-    color: var(--success-color);
+
+/* Styles for the Deep Scan button with text */
+.pdf-toolbar-right .deep-scan-btn {
+    height: 40px;
+    padding: 0 0.75rem; /* 12px */
+    font-size: 0.9rem;
 }
+.pdf-toolbar-right .deep-scan-btn.completed-scan {
+    border-color: #dcfce7; /* green-100 */
+    background-color: #f0fdf4; /* green-50 */
+    color: #15803d; /* green-700 */
+}
+.pdf-toolbar-right .deep-scan-btn.completed-scan svg {
+    color: #16a34a; /* green-600 */
+}
+.pdf-toolbar-right .deep-scan-btn.completed-scan:hover:not(:disabled) {
+    background-color: #dcfce7; /* green-100 */
+}
+
+/* Adjust spinner color for secondary button background */
+.pdf-toolbar-right .deep-scan-btn .spinner-small {
+    border-color: rgba(0,0,0,0.2);
+    border-bottom-color: var(--text-color);
+}
+
 
 /* responsive */
 @media (max-width:900px) {
@@ -416,6 +438,13 @@
   }
   
   .page-total {
+      font-size: 0.85rem;
+  }
+
+  /* Style deep scan button on mobile to include text */
+  .pdf-toolbar-right .deep-scan-btn {
+      height: 36px; /* match other mobile buttons */
+      padding: 0 0.6rem;
       font-size: 0.85rem;
   }
 }
