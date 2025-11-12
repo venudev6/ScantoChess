@@ -61,8 +61,8 @@ const AdminView = ({ onBack }: AdminViewProps) => {
                         </thead>
                         <tbody>
                             {users.map(user => (
-                                <tr key={user.id}>
-                                    <td>{user.id}</td>
+                                <tr key={user.uid}>
+                                    <td>{user.uid}</td>
                                     <td>{user.email}</td>
                                     <td>
                                         <span className={`role-badge role-${user.role}`}>

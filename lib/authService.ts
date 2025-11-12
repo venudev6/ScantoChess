@@ -2,344 +2,251 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import type { User, UserStatus } from './types';
-
-// This is a MOCK authentication service. It uses localStorage to simulate a user database
-// and session management. In a real application, this would be replaced with actual API
-// calls to a secure backend server.
-
-const MOCK_DB_USERS_KEY = 'mock_db_users';
-const MOCK_SESSION_KEY = 'mock_session';
-
-// A more complete user record for the mock database, including password.
-interface MockDbUser extends User {
-    password?: string;
-    isGoogle?: boolean; // Flag for Google users
-}
-
-// --- Helper Functions ---
-const getUsersFromDB = (): { [email: string]: MockDbUser } => {
-    return JSON.parse(localStorage.getItem(MOCK_DB_USERS_KEY) || '{}');
-};
-const saveUsersToDB = (users: any) => {
-    localStorage.setItem(MOCK_DB_USERS_KEY, JSON.stringify(users));
-};
-const generateToken = () => {
-    return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-}
-
-// Simulate network latency
-const simulateDelay = (ms: number) => new Promise(res => setTimeout(res, ms));
-
-const getFullUser = (dbUser: MockDbUser): User => {
-    const { password, isGoogle, ...user } = dbUser;
-    return user;
-}
-
-const updateUserInSession = (dbUser: MockDbUser): User => {
-    const sessionData = localStorage.getItem(MOCK_SESSION_KEY);
-    const user = getFullUser(dbUser);
-    if (sessionData) {
-        const sessionUser = JSON.parse(sessionData);
-        if (sessionUser.id === dbUser.id) {
-            localStorage.setItem(MOCK_SESSION_KEY, JSON.stringify(user));
-        }
-    }
-    return user;
-};
-
-
-// --- Service Method Implementations ---
+import {
+    createUserWithEmailAndPassword,
+    signInWithEmailAndPassword,
+    signOut,
+    GoogleAuthProvider,
+    signInWithPopup,
+    sendEmailVerification,
+    onAuthStateChanged,
+    updateProfile,
+    User as FirebaseUser
+} from 'firebase/auth';
+import { auth } from './firebase';
+import type { User } from './types';
+import { GOOGLE_CLIENT_ID, GOOGLE_DRIVE_SCOPE } from './config';
 
 /**
- * Logs out the current user by clearing the session.
+ * Maps a Firebase User object to the application's internal User type.
+ * @param firebaseUser The user object from the Firebase Authentication SDK.
+ * @returns The application-specific User object.
  */
-const logout = () => {
-    localStorage.removeItem(MOCK_SESSION_KEY);
+const mapFirebaseUserToAppUser = (firebaseUser: FirebaseUser | null): User | null => {
+    if (!firebaseUser) {
+        return null;
+    }
+    // TODO: In a real app, 'role' would likely come from custom claims or a database (like Firestore).
+    // For now, we default all users to the 'user' role.
+    return {
+        uid: firebaseUser.uid,
+        email: firebaseUser.email!,
+        name: firebaseUser.displayName || firebaseUser.email!.split('@')[0],
+        photoUrl: firebaseUser.photoURL || undefined,
+        role: 'user', 
+        status: firebaseUser.emailVerified ? 'active' : 'pending',
+    };
 };
 
+/**
+ * A wrapper around Firebase's onAuthStateChanged.
+ * It listens for changes in the user's sign-in state and calls the provided
+ * callback with either the mapped application User object or null.
+ * @param callback The function to call when the auth state changes.
+ * @returns The unsubscribe function from Firebase.
+ */
+const onAuthUserChanged = (callback: (user: User | null) => void) => {
+    return onAuthStateChanged(auth, (firebaseUser) => {
+        const user = mapFirebaseUserToAppUser(firebaseUser);
+        callback(user);
+    });
+};
+
+/**
+ * Logs out the current user.
+ */
+const logout = async () => {
+    await signOut(auth);
+};
 
 /**
  * Attempts to log in a user with an email and password.
  */
-const login = async (email: string, password: string): Promise<User> => {
-    await simulateDelay(500);
-    const users = getUsersFromDB();
-    const userData = users[email];
-    
-    if (userData && userData.password === password) {
-        if (userData.status === 'pending') {
-             throw new Error('Please confirm your email address before logging in.');
-        }
-        const user = getFullUser(userData);
-        localStorage.setItem(MOCK_SESSION_KEY, JSON.stringify(user));
-        return user;
-    } else {
-        throw new Error('Invalid email or password.');
+const login = async (email: string, password: string): Promise<void> => {
+    const userCredential = await signInWithEmailAndPassword(auth, email, password);
+    if (!userCredential.user.emailVerified) {
+        // Send a new verification email to be helpful.
+        await sendEmailVerification(userCredential.user);
+        await logout(); // Sign out user if email is not verified
+        throw new Error('Please verify your email address. A new verification email has been sent.');
     }
+    // No return needed; onAuthStateChanged will handle the user object.
 };
 
 /**
- * Simulates logging in or registering a user via a Google credential.
- * @param credential The decoded JWT credential from Google.
- * @returns The logged-in User object.
+ * Initiates the Google Sign-In popup flow.
  */
-const loginWithGoogle = async (credential: { email: string, name: string, sub: string }): Promise<User> => {
-    await simulateDelay(500);
-    const users = getUsersFromDB();
-    let userData = users[credential.email];
-
-    // If user doesn't exist, create a new one.
-    if (!userData) {
-        const newId = Math.max(0, ...Object.values(users).map(u => u.id)) + 1;
-        userData = {
-            id: newId,
-            email: credential.email,
-            name: credential.name,
-            role: 'user',
-            status: 'active',
-            isGoogle: true,
-        };
-        users[credential.email] = userData;
-        saveUsersToDB(users);
-    }
+const loginWithGoogle = async (): Promise<{ token: string | null }> => {
+    const provider = new GoogleAuthProvider();
+    // Add the Google Drive scope to get an access token for the Drive API
+    provider.addScope(GOOGLE_DRIVE_SCOPE);
+    const result = await signInWithPopup(auth, provider);
     
-    // Mark the user as a Google user for Drive sync purposes.
-    userData.isGoogle = true;
-    saveUsersToDB(users);
-    
-    const user = getFullUser(userData);
-    localStorage.setItem(MOCK_SESSION_KEY, JSON.stringify(user));
-    return user;
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    const token = credential?.accessToken || null;
+
+    // No need to map/return the user; onAuthStateChanged will handle it.
+    return { token };
 };
 
 /**
- * Checks if a user is a Google-authenticated user.
- * This is a mock function that relies on the isGoogle flag.
- * @param user The user object.
- * @returns True if the user is a Google user.
+ * Checks whether the currently-signed-in Firebase user used Google as a provider.
+ * If a Firebase SDK user is passed it will also be considered, but priority is given
+ * to auth.currentUser to avoid mismatches with application-level User objects.
  */
-const isGoogleUser = async (user: User): Promise<boolean> => {
-    if (!user) return false;
-    const users = getUsersFromDB();
-    const dbUser = users[user.email];
-    return !!dbUser?.isGoogle;
-};
+const isGoogleUser = async (maybeUser?: FirebaseUser | null): Promise<boolean> => {
+    // Prefer the real Firebase SDK user from the auth instance.
+    const firebaseUser = auth.currentUser ?? (maybeUser ?? null);
 
-
-/**
- * Registers a new user. Does NOT log them in.
- */
-const register = async (email: string, password: string): Promise<{ success: boolean, message: string }> => {
-    await simulateDelay(700);
-    const users = getUsersFromDB();
-
-    if (users[email]) {
-        throw new Error('An account with this email already exists.');
+    if (!firebaseUser) {
+        return false;
     }
 
-    const newId = Math.max(0, ...Object.values(users).map(u => u.id)) + 1;
-    const confirmationToken = generateToken();
-    const newUser: MockDbUser = { 
-        id: newId, 
-        email, 
-        name: email.split('@')[0],
-        role: 'user', 
-        status: 'pending', 
-        password,
-        confirmationToken
-    };
-    users[email] = newUser;
-    saveUsersToDB(users);
-    
-    // --- MOCK EMAIL SENDING ---
-    // In a real app, you would send an email with a link like:
-    // `https://yourapp.com/confirm-email?token=${confirmationToken}`
-    console.log(`
-        --- SIMULATED EMAIL ---
-        To: ${email}
-        Subject: Confirm your Scan to Chess Account
+    const pd = (firebaseUser as any).providerData;
 
-        Please confirm your account by using the following token: ${confirmationToken}
-        (In a real app, this would be a clickable link)
-        -----------------------
-    `);
-    // -------------------------
-
-    return { success: true, message: 'Registration successful. Please check your email for a confirmation link.' };
-};
-
-/**
- * Finds a user by their confirmation token and activates their account.
- */
-const confirmEmail = async (token: string): Promise<User> => {
-    await simulateDelay(300);
-    const users = getUsersFromDB();
-    const userEmail = Object.keys(users).find(email => users[email].confirmationToken === token);
-    
-    if (userEmail) {
-        const userData = users[userEmail];
-        userData.status = 'active';
-        delete userData.confirmationToken; // Token is single-use
-        saveUsersToDB(users);
-        return getFullUser(userData);
-    } else {
-        throw new Error('Invalid or expired confirmation token.');
+    if (!Array.isArray(pd)) {
+        return false;
     }
+
+    return pd.some((provider: any) => provider && provider.providerId === GoogleAuthProvider.PROVIDER_ID);
 };
 
+
 /**
- * MOCK ONLY: Helper to get a user's token for simulation purposes.
+ * Registers a new user with email and password, sends a verification email,
+ * and then signs them out, requiring them to verify before logging in.
  */
-const getPendingUserByEmail = async (email: string): Promise<MockDbUser | null> => {
-    await simulateDelay(100);
-    const users = getUsersFromDB();
-    const user = users[email];
-    return (user && user.status === 'pending') ? user : null;
+const register = async (email: string, password: string): Promise<void> => {
+    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+    await sendEmailVerification(userCredential.user);
+    await signOut(auth); // Important: Sign out the user immediately.
 };
 
 
 /**
- * Checks for an active session and returns the user if found.
+ * Retrieves the currently signed-in Firebase user and maps them to the app's User type.
+ * Note: `onAuthUserChanged` is the preferred way to get the current user in real-time.
  */
 const getCurrentUser = async (): Promise<User | null> => {
-    await simulateDelay(200); // Simulate checking a session token
-    const sessionData = localStorage.getItem(MOCK_SESSION_KEY);
-    if (sessionData) {
-        try {
-            const user: User = JSON.parse(sessionData);
-            const dbUsers = getUsersFromDB();
-            if (dbUsers[user.email] && dbUsers[user.email].status === 'active') {
-                const dbUser = dbUsers[user.email];
-                const fullUser = getFullUser(dbUser);
-                // Sync session if it's outdated
-                if (JSON.stringify(user) !== JSON.stringify(fullUser)) {
-                    localStorage.setItem(MOCK_SESSION_KEY, JSON.stringify(fullUser));
-                }
-                return fullUser;
-            }
-        } catch (e) {
-            console.error("Corrupted session data. Clearing session.", e);
-            logout(); // Clear corrupted session immediately
-        }
-    }
-    return null; // Return null if no session, session is invalid, or user is inactive
+    // This is now synchronous as Firebase SDK caches the user state.
+    return mapFirebaseUserToAppUser(auth.currentUser);
 };
 
 /**
  * (Admin Only) Fetches a list of all registered users.
+ * NOTE: This functionality requires a backend with the Firebase Admin SDK.
+ * This client-side implementation is a placeholder and will not work.
  */
 const getAllUsers = async (): Promise<User[]> => {
-    await simulateDelay(400);
-    const users = getUsersFromDB();
-    // Return a list of users without their passwords or other sensitive info
-    return Object.values(users).map(getFullUser);
+    console.warn("getAllUsers requires a backend with Firebase Admin SDK and is not implemented on the client.");
+    return Promise.resolve([]);
 };
 
 /**
- * Updates a user's profile information.
+ * Updates a user's profile information (name and photo).
  */
-const updateUser = async (updatedDetails: Partial<User> & { id: number }): Promise<User> => {
-    await simulateDelay(300);
-    const users = getUsersFromDB();
-    const userEmail = Object.keys(users).find(email => users[email].id === updatedDetails.id);
-
-    if (!userEmail) {
-        throw new Error('User to update not found in mock DB.');
+const updateUser = async (uid: string, updatedDetails: { name?: string; about?: string; photoUrl?: string }): Promise<User> => {
+    const firebaseUser = auth.currentUser;
+    if (!firebaseUser || firebaseUser.uid !== uid) {
+        throw new Error("User not found or mismatch.");
     }
-
-    const dbUser = users[userEmail];
-    if (updatedDetails.name !== undefined) {
-        dbUser.name = updatedDetails.name;
-    }
-    if (updatedDetails.about !== undefined) {
-        dbUser.about = updatedDetails.about;
-    }
-    if (updatedDetails.photoUrl !== undefined) {
-        dbUser.photoUrl = updatedDetails.photoUrl;
-    }
-
-    users[userEmail] = dbUser;
-    saveUsersToDB(users);
     
-    return updateUserInSession(dbUser);
+    await updateProfile(firebaseUser, {
+        displayName: updatedDetails.name,
+        photoURL: updatedDetails.photoUrl
+    });
+
+    // NOTE: The 'about' field cannot be saved with Firebase Auth alone.
+    // This would require a database like Firestore to store extra profile data.
+    if (updatedDetails.about !== undefined) {
+         console.warn("'About me' field requires a database (like Firestore) and is not saved.");
+    }
+    
+    return mapFirebaseUserToAppUser(auth.currentUser)!;
 };
 
-// --- PIN Management ---
-const setPin = async (userId: number, pin: string): Promise<User> => {
-    await simulateDelay(200);
-    const users = getUsersFromDB();
-    const userEmail = Object.keys(users).find(email => users[email].id === userId);
-    if (!userEmail) throw new Error("User not found.");
+// --- Google Drive Service ---
+export const googleDriveService = {
+    async uploadFile(file: File, token: string): Promise<string> {
+        // Find or create 'AAA Chess to Scan' folder
+        const folderId = await this.findOrCreateFolder('AAA Chess to Scan', token);
 
-    users[userEmail].pinHash = pin; // Not really a hash, but this is a mock.
-    saveUsersToDB(users);
-    return updateUserInSession(users[userEmail]);
-};
-
-const verifyPin = async (userId: number, pin: string): Promise<boolean> => {
-    await simulateDelay(200);
-    const users = getUsersFromDB();
-    const userEmail = Object.keys(users).find(email => users[email].id === userId);
-    if (!userEmail) return false;
-    return users[userEmail].pinHash === pin;
-};
-
-const requestPinReset = async (userId: number): Promise<string> => {
-    await simulateDelay(300);
-    const users = getUsersFromDB();
-    const userEmail = Object.keys(users).find(email => users[email].id === userId);
-    if (!userEmail) throw new Error("User not found.");
-
-    const token = generateToken();
-    users[userEmail].pinResetToken = token;
-    users[userEmail].pinResetExpires = Date.now() + 3600000; // 1 hour
-    saveUsersToDB(users);
-
-    console.log(`
-        --- SIMULATED PIN RESET ---
-        To: ${userEmail}
-        Your PIN reset token is: ${token}
-        It expires in 1 hour.
-        (In a real app, this would be an email with a link)
-        -------------------------`);
-
-    return token;
-};
-
-const resetPin = async (token: string, newPin: string): Promise<User> => {
-    await simulateDelay(300);
-    const users = getUsersFromDB();
-    const userEmail = Object.keys(users).find(email => 
-        users[email].pinResetToken === token && 
-        users[email].pinResetExpires && 
-        users[email].pinResetExpires! > Date.now()
-    );
-    if (!userEmail) throw new Error("Invalid or expired PIN reset token.");
-
-    users[userEmail].pinHash = newPin;
-    users[userEmail].pinResetToken = null;
-    users[userEmail].pinResetExpires = null;
-    saveUsersToDB(users);
-    return updateUserInSession(users[userEmail]);
-};
-
-
-// --- Initialize Mock Database with a default admin user ---
-const initializeMockDB = () => {
-    if (!localStorage.getItem(MOCK_DB_USERS_KEY)) {
-        const defaultAdmin: MockDbUser = { id: 1, email: 'admin@example.com', role: 'admin', status: 'active', password: 'admin123', name: 'Admin User' };
-        const defaultUser: MockDbUser = { id: 2, email: 'user@example.com', role: 'user', status: 'active', password: 'password123', name: 'Demo User' };
-        const users = {
-            [defaultAdmin.email]: defaultAdmin,
-            [defaultUser.email]: defaultUser,
+        const metadata = {
+            name: file.name,
+            mimeType: file.type,
+            parents: [folderId],
         };
-        localStorage.setItem(MOCK_DB_USERS_KEY, JSON.stringify(users));
+
+        const form = new FormData();
+        form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+        form.append('file', file);
+
+        const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+            method: 'POST',
+            headers: {
+                Authorization: `Bearer ${token}`,
+            },
+            body: form,
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(`Google Drive upload failed: ${error.error.message}`);
+        }
+
+        const responseData = await response.json();
+        return responseData.id;
+    },
+
+    async findOrCreateFolder(folderName: string, token: string): Promise<string> {
+        // First, search for the folder
+        let response = await fetch(`https://www.googleapis.com/drive/v3/files?q=mimeType='application/vnd.google-apps.folder' and name='${folderName}' and trashed=false`, {
+            headers: {
+                Authorization: `Bearer ${token}`,
+            },
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(`Failed to search for Google Drive folder: ${error.error.message}`);
+        }
+        
+        let data = await response.json();
+        if (data.files && data.files.length > 0) {
+            return data.files[0].id;
+        }
+
+        // If not found, create it
+        const metadata = {
+            name: folderName,
+            mimeType: 'application/vnd.google-apps.folder',
+        };
+
+        response = await fetch('https://www.googleapis.com/drive/v3/files', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify(metadata),
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(`Failed to create Google Drive folder: ${error.error.message}`);
+        }
+        
+        data = await response.json();
+        return data.id;
     }
 };
 
-initializeMockDB();
-
+// --- PIN Management (Not implemented with Firebase Auth) ---
+// These functions would require a backend or Firestore to securely manage PINs.
+const setPin = async (uid: string, pin: string): Promise<User> => { throw new Error("PIN functionality not implemented."); };
+const verifyPin = async (uid: string, pin: string): Promise<boolean> => { throw new Error("PIN functionality not implemented."); };
+const requestPinReset = async (uid: string): Promise<string> => { throw new Error("PIN functionality not implemented."); };
+const resetPin = async (token: string, newPin: string): Promise<User> => { throw new Error("PIN functionality not implemented."); };
 
 // --- Exported Auth Service Object ---
 export const authService = {
@@ -347,8 +254,6 @@ export const authService = {
     loginWithGoogle,
     isGoogleUser,
     register,
-    confirmEmail,
-    getPendingUserByEmail,
     logout,
     getCurrentUser,
     getAllUsers,
@@ -359,127 +264,5 @@ export const authService = {
     resetPin,
 };
 
-
-const APP_FOLDER_NAME = "AAA Chess to Scan";
-const DRIVE_FOLDER_ID_KEY = 'drive_visibleFolder_id';
-
-
-export const googleDriveService = {
-    /**
-     * Finds the app's folder in Google Drive, or creates it if it doesn't exist.
-     * This version first searches for the folder by name, making it robust against
-     * the user deleting the locally stored folder ID.
-     * @param accessToken The user's Google API access token.
-     * @returns The ID of the folder.
-     */
-    async findOrCreateAppFolder(accessToken: string): Promise<string> {
-        // 1. Check local storage for a stored folder ID and verify it
-        const storedFolderId = localStorage.getItem(DRIVE_FOLDER_ID_KEY);
-        if (storedFolderId) {
-            const verifyResponse = await fetch(`https://www.googleapis.com/drive/v3/files/${storedFolderId}?fields=id,trashed`, {
-                 headers: new Headers({ 'Authorization': `Bearer ${accessToken}` }),
-            });
-            if (verifyResponse.ok) {
-                const folderData = await verifyResponse.json();
-                if (!folderData.trashed) {
-                    return storedFolderId; // Folder is valid, return its ID
-                }
-            }
-            // If verification fails (e.g., folder deleted), remove the bad ID
-            localStorage.removeItem(DRIVE_FOLDER_ID_KEY);
-        }
-
-        // 2. If no valid ID, search for the folder by name in the user's Drive.
-        const query = `mimeType='application/vnd.google-apps.folder' and name='${APP_FOLDER_NAME}' and trashed=false`;
-        const searchResponse = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&spaces=drive&fields=files(id)`, {
-            headers: new Headers({ 'Authorization': `Bearer ${accessToken}` }),
-        });
-
-        if (searchResponse.ok) {
-            const searchData = await searchResponse.json();
-            if (searchData.files && searchData.files.length > 0) {
-                const folderId = searchData.files[0].id;
-                localStorage.setItem(DRIVE_FOLDER_ID_KEY, folderId);
-                return folderId; // Found existing folder
-            }
-        } else {
-            console.error('Error searching for app folder:', await searchResponse.json());
-        }
-        
-        // 3. If still not found, create a new folder in the 'root' (My Drive).
-        const folderMetadata = {
-            name: APP_FOLDER_NAME,
-            mimeType: 'application/vnd.google-apps.folder',
-            parents: ['root']
-        };
-
-        const createResponse = await fetch('https://www.googleapis.com/drive/v3/files', {
-            method: 'POST',
-            headers: new Headers({
-                'Authorization': `Bearer ${accessToken}`,
-                'Content-Type': 'application/json',
-            }),
-            body: JSON.stringify(folderMetadata),
-        });
-        
-        if (!createResponse.ok) {
-            const error = await createResponse.json();
-            console.error('Failed to create app folder:', error);
-            throw new Error(`Google Drive folder creation failed: ${error.error.message}`);
-        }
-        
-        const createData = await createResponse.json();
-        
-        // 4. Store the newly created folder's ID
-        localStorage.setItem(DRIVE_FOLDER_ID_KEY, createData.id);
-        
-        return createData.id;
-    },
-
-    async uploadFile(file: File, accessToken: string): Promise<string> {
-        const folderId = await this.findOrCreateAppFolder(accessToken);
-        
-        const metadata = {
-            name: file.name,
-            mimeType: file.type,
-            parents: [folderId]
-        };
-
-        const boundary = '-------314159265358979323846';
-        const delimiter = `\r\n--${boundary}\r\n`;
-        const close_delim = `\r\n--${boundary}--`;
-
-        const metadataPart = new Blob([
-            delimiter,
-            'Content-Type: application/json; charset=UTF-8\r\n\r\n',
-            JSON.stringify(metadata)
-        ]);
-
-        const filePartHeader = new Blob([
-            delimiter,
-            `Content-Type: ${file.type}\r\n\r\n`
-        ]);
-        
-        const closingPart = new Blob([close_delim]);
-
-        const requestBody = new Blob([metadataPart, filePartHeader, file, closingPart]);
-
-        const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
-            method: 'POST',
-            headers: new Headers({
-                'Authorization': `Bearer ${accessToken}`,
-                'Content-Type': `multipart/related; boundary=${boundary}`
-            }),
-            body: requestBody,
-        });
-
-        if (!response.ok) {
-            const error = await response.json();
-            console.error('Google Drive upload failed:', error);
-            throw new Error(`Google Drive upload failed: ${error.error.message}`);
-        }
-
-        const responseData = await response.json();
-        return responseData.id;
-    }
-};
+// Export the listener separately
+export { onAuthUserChanged };

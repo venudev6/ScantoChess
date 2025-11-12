@@ -11,7 +11,7 @@ import './LoginView.css'; // Re-use the same styles as LoginView
 interface RegisterViewProps {
     onLoginClick: () => void;
     onCancel: () => void;
-    onRegisterSuccess: (email: string) => void;
+    onRegisterSuccess: () => void;
 }
 
 const RegisterView = ({ onLoginClick, onCancel, onRegisterSuccess }: RegisterViewProps) => {
@@ -33,7 +33,7 @@ const RegisterView = ({ onLoginClick, onCancel, onRegisterSuccess }: RegisterVie
         try {
             await register(email, password);
             // On successful registration, show the pending confirmation view.
-            onRegisterSuccess(email);
+            onRegisterSuccess();
         } catch (err) {
             setError(err instanceof Error ? err.message : 'An unknown error occurred.');
         } finally {

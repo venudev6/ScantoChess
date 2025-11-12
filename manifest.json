@@ -1,6 +1,6 @@
 {
-  "name": "Nandan's Scan to Chess",
-  "short_name": "Scan Chess",
+  "name": "Experiment ChessPuzzleScanner",
+  "short_name": "Chess Scanner",
   "description": "Scan a chess position from an image and analyze it.",
   "start_url": "/",
   "display": "standalone",

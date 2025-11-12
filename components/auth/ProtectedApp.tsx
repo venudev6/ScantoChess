@@ -101,7 +101,7 @@ export const ProtectedApp = ({
             return;
         }
 
-        const isGoogle = await authService.isGoogleUser(user);
+        const isGoogle = await authService.isGoogleUser();
         if (!isGoogle) {
             console.log("Drive sync is only available for Google users.");
             return;
@@ -140,7 +140,7 @@ export const ProtectedApp = ({
     useEffect(() => {
         const syncLocalFiles = async () => {
             if (user) {
-                const isGoogle = await authService.isGoogleUser(user);
+                const isGoogle = await authService.isGoogleUser();
                 if (isGoogle) {
                     await db.init();
                     const pdfsToSync = await db.getAllPdfs();
@@ -531,7 +531,9 @@ export const ProtectedApp = ({
                                         imageFile={imageData} 
                                         onPuzzleSelect={handlePreScannedPuzzleFound} 
                                         onMultiPuzzleFound={handleMultiPuzzleFound}
-                                        onBack={resetToInitial} 
+                                        onBack={resetToInitial}
+                                        onCropConfirm={handleCropConfirm}
+                                        initialPuzzles={multiPuzzleContext?.puzzles}
                                     />;
             case 'pdfViewer':
                 return selectedPdf && <PdfView 

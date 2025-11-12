@@ -12,7 +12,6 @@
     justify-content: flex-start;
     text-align: center;
     flex-grow: 1;
-    background-color: #f2efeb;
     overflow-y: auto; /* Allow scrolling for long lists of PDFs */
 }
 

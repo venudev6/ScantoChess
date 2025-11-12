@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Nandan's - Scan to Play Chess</title>
+    <title>Experiment ChessPuzzleScanner</title>
     
     <!-- PWA Manifest and Theme Color -->
     <link rel="manifest" href="/manifest.json">
@@ -46,10 +46,6 @@
     <link rel="stylesheet" href="/components/ui/UpdatePrompt.css">
     <link rel="stylesheet" href="/components/views/YoloDebugView.css">
 
-    <!-- Google Identity Services Script -->
-    <script src="https://accounts.google.com/gsi/client" async defer onload="onGoogleLibraryLoad()"></script>
-    <!-- Google API Client Script for Drive API -->
-    <script src="https://apis.google.com/js/api.js" async defer></script>
     <!-- Tesseract.js for client-side OCR -->
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" async defer></script>
     <!-- OpenCV.js for client-side image processing -->
@@ -71,44 +67,6 @@
                 }
             };
         });
-
-        // This function will be populated by the React app's AuthContext.
-        // It allows the GSI callback to trigger a login within the React state.
-        window.onGoogleSignIn = (credential) => {
-            console.error("onGoogleSignIn has not been initialized by the React application yet.");
-        };
-
-        // This function is the single source of truth for initializing the Google Sign-In client.
-        // It runs once when the GSI library has loaded.
-        function onGoogleLibraryLoad() {
-            if (typeof google === 'undefined' || !google.accounts) {
-                console.error("Google Identity Services library failed to load.");
-                return;
-            }
-
-            // Initialize the client. This MUST be called only once per page load.
-            google.accounts.id.initialize({
-                client_id: window.GOOGLE_CLIENT_ID,
-                callback: (response) => {
-                    // The callback is handled by the function our React app provides.
-                    window.onGoogleSignIn(response.credential);
-                },
-                // Explicitly setting auto_select to false is an extra layer of safety.
-                auto_select: false
-            });
-
-            // Check for an existing app session.
-            const sessionData = localStorage.getItem('mock_session');
-            if (sessionData) {
-                // If logged in, we MUST prevent the One Tap prompt from showing.
-                // This sets a cookie that the GSI library respects.
-                google.accounts.id.disableAutoSelect();
-            }
-            // We do not need an 'else' block. For logged-out users, the default
-            // behavior is correct: the prompt won't show automatically unless we call
-            // google.accounts.id.prompt(). The LoginView component will handle
-            // rendering the button for the user to click.
-        }
     </script>
 <script type="importmap">
 {
@@ -121,7 +79,11 @@
     "chess.js": "https://aistudiocdn.com/chess.js@^1.4.0",
     "@google/genai": "https://aistudiocdn.com/@google/genai@^1.23.0",
     "react-intersection-observer": "https://aistudiocdn.com/react-intersection-observer@^9.13.0",
-    "pdfjs-dist": "https://aistudiocdn.com/pdfjs-dist@4.10.38/build/pdf.mjs"
+    "pdfjs-dist": "https://aistudiocdn.com/pdfjs-dist@4.10.38/build/pdf.mjs",
+    "firebase/app": "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js",
+    "firebase/auth": "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js",
+    "firebase/analytics": "https://www.gstatic.com/firebasejs/10.12.2/firebase-analytics.js",
+    "firebase/": "https://aistudiocdn.com/firebase@^12.5.0/"
   }
 }
 </script>
@@ -144,10 +106,7 @@
             <noscript>This application requires JavaScript to run.</noscript>
         </div>
     </div>
-    
-    <!-- Make the Google Client ID available globally for the pre-React script -->
-    <script>window.GOOGLE_CLIENT_ID = "974195773800-sil1nd8or5rprp2ef43kha29u2gbdg5j.apps.googleusercontent.com";</script>
-    
+        
     <!-- The main application script is loaded from a pre-compiled bundle. -->
     <script type="module" src="/dist/bundle.js"></script>
 

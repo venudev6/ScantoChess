@@ -20,14 +20,13 @@ export type UserStatus = 'active' | 'pending';
  * Represents a registered user.
  */
 export interface User {
-    id: number;
+    uid: string; // Firebase UID
     email: string;
     role: Role;
-    status: UserStatus;
+    status: UserStatus; // Maps to Firebase's emailVerified
     name?: string;
     about?: string;
     photoUrl?: string;
-    confirmationToken?: string; // Token used for email verification
     pinHash?: string | null; // Store a hash of the 4-digit PIN
     pinResetToken?: string | null;
     pinResetExpires?: number | null;

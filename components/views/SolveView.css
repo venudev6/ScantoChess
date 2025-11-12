@@ -380,30 +380,30 @@
         padding: 0.5rem 0.75rem; /* Vertical | Horizontal */
         gap: 0.75rem;
         justify-content: flex-end;
-        background-color: #fff;
-        border-top: 1px solid var(--border-color);
-        box-shadow: 0 -2px 8px rgba(0,0,0,0.05);
+        background-color: transparent;
+        border-top: none;
+        box-shadow: none;
+        min-width: 0; /* Prevents horizontal overflow from child scroller */
     }
     
     .move-navigation-controls {
+        order: -1;
         padding-bottom: 0;
-        margin-bottom: 0.25rem;
-        /* Visually separate from move history */
-        border-top: 1px solid var(--border-color);
-        padding-top: 0.5rem;
-        margin-top: 0.5rem;
+        margin-bottom: 0;
+        border-top: none;
+        padding-top: 0;
+        margin-top: 0;
     }
     
     /* On mobile, this wrapper becomes a flex row for the scroller */
     .move-history-wrapper {
-        order: -1; /* Place it BEFORE nav controls */
         display: flex;
         align-items: center;
         width: 100%;
         background-color: transparent;
         border: none;
         padding: 0;
-        margin: 0 0 0.5rem 0;
+        margin: 0;
         box-shadow: none;
         border-radius: 0;
         min-height: 44px;

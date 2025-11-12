@@ -1,5 +1,5 @@
 {
-  "name": "Server - Nandan's Scan to Chess",
+  "name": "Experiment ChessPuzzleScanner",
   "description": "Scan a chess position from an image and analyze it.",
   "requestFramePermissions": [
     "camera",

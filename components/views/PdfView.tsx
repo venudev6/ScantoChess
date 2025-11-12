@@ -649,9 +649,10 @@ const PdfView: React.FC<PdfViewProps> = ({
         const pagePuzzles = scannedPuzzles.get(i) || [];
         
         pages.push(
+// FIX: The ref callback should not have a return value. Added curly braces to make it a statement block.
           <div 
             key={i} 
-            ref={el => pageWrapperRefs.current.set(i, el)} 
+            ref={el => { pageWrapperRefs.current.set(i, el) }} 
             className="pdf-page-wrapper"
             onPointerDown={(e) => handlePagePointerDown(e, i)}
           >
@@ -752,7 +753,9 @@ const PdfView: React.FC<PdfViewProps> = ({
       }
       const containerWidth = mainViewRef.current.clientWidth - 48;
       const containerHeight = mainViewRef.current.clientHeight - 48;
+// FIX: Cannot find name 'viewport'.
       const scaleX = containerWidth / pageViewport.width;
+// FIX: Cannot find name 'viewport'.
       const scaleY = containerHeight / pageViewport.height;
       setZoom(Math.min(scaleX, scaleY));
       setIsOptionsOpen(false);
@@ -821,7 +824,8 @@ const PdfView: React.FC<PdfViewProps> = ({
             <div className="pdf-filmstrip-scroller">
             {isDocLoading ? <div className="thumb-loading">Loading PDF...</div> :
                 Array.from({ length: numPages }, (_, i) => i + 1).map(pageNum => (
-                    <div key={pageNum} ref={el => thumbRefs.current.set(pageNum, el)}>
+// FIX: The ref callback should not have a return value. Added curly braces to make it a statement block.
+                    <div key={pageNum} ref={el => { thumbRefs.current.set(pageNum, el); }}>
                         <ThumbRenderer
                             pdfDoc={pdfDoc}
                             pageNumber={pageNum}

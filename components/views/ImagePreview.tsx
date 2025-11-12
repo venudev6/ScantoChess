@@ -14,6 +14,8 @@ interface ImagePreviewProps {
     onPuzzleSelect: (fen: string) => void;
     onMultiPuzzleFound: (puzzles: DetectedPuzzle[], imageFile: File) => void;
     onBack: () => void;
+    onCropConfirm: (file: File, clientProcessingTime: number) => void;
+    initialPuzzles?: DetectedPuzzle[];
 }
 
 // Helper function to create a file from a canvas crop
@@ -48,7 +50,7 @@ const canvasCropToFile = async (
  * A view that automatically performs a deep scan on an uploaded image to find
  * all chess puzzles, analyzing them and displaying interactive overlays.
  */
-const ImagePreview = ({ imageFile, onPuzzleSelect, onMultiPuzzleFound, onBack }: ImagePreviewProps) => {
+const ImagePreview = ({ imageFile, onPuzzleSelect, onMultiPuzzleFound, onBack, onCropConfirm, initialPuzzles }: ImagePreviewProps) => {
     const [imgSrc, setImgSrc] = useState('');
     const [scanState, setScanState] = useState<'scanning' | 'analyzing' | 'done' | 'error'>('scanning');
     const [scanProgress, setScanProgress] = useState({ current: 0, total: 0, message: '' });
@@ -86,8 +88,6 @@ const ImagePreview = ({ imageFile, onPuzzleSelect, onMultiPuzzleFound, onBack }:
 
         if (isCancelledRef.current) return;
 
-        setAspectRatio(img.naturalWidth / img.naturalHeight);
-
         imageCanvasRef.current = document.createElement('canvas');
         imageCanvasRef.current.width = img.naturalWidth;
         imageCanvasRef.current.height = img.naturalHeight;
@@ -107,6 +107,19 @@ const ImagePreview = ({ imageFile, onPuzzleSelect, onMultiPuzzleFound, onBack }:
             if (tightBoxes.length === 0) {
                 setScanProgress({ current: 0, total: 0, message: 'No chessboards found.' });
                 setTimeout(() => setScanState('done'), 1500);
+                return;
+            } else if (tightBoxes.length === 1) {
+                setScanProgress({ current: 0, total: 1, message: 'Found 1 board. Analyzing...' });
+                const box = tightBoxes[0];
+                const PADDING_PERCENT = 0.04;
+                const expandedBox = expandBox(box, PADDING_PERCENT);
+                const puzzleFile = await canvasCropToFile(imageCanvasRef.current!, expandedBox, 'single_puzzle.webp');
+                if (puzzleFile) {
+                    onCropConfirm(puzzleFile, 0);
+                } else {
+                    setScanState('error');
+                    setScanError('Failed to prepare image for analysis.');
+                }
                 return;
             }
             
@@ -157,11 +170,8 @@ const ImagePreview = ({ imageFile, onPuzzleSelect, onMultiPuzzleFound, onBack }:
                 onPuzzleSelect(validPuzzles[0].fen);
                 return;
             }
-
-            if (validPuzzles.length > 1) {
-                onMultiPuzzleFound(validPuzzles, imageFile);
-            }
             
+            onMultiPuzzleFound(validPuzzles, imageFile);
             setDetectedPuzzles(validPuzzles);
             const foundCount = validPuzzles.length;
             const completeMessage = foundCount > 0 ? `Scan complete! Click a puzzle to begin.` : 'Could not analyze any boards.';
@@ -174,11 +184,17 @@ const ImagePreview = ({ imageFile, onPuzzleSelect, onMultiPuzzleFound, onBack }:
             setScanError(error instanceof Error ? error.message : 'An unknown error occurred during scan.');
             setScanState('error');
         }
-    }, [imgSrc, onCVProgress, onPuzzleSelect, onMultiPuzzleFound, imageFile]);
+    }, [imgSrc, onCVProgress, onCropConfirm, onMultiPuzzleFound, imageFile, onPuzzleSelect]);
 
     useEffect(() => {
         const reader = new FileReader();
-        reader.onload = e => setImgSrc(e.target?.result as string);
+        reader.onload = e => {
+            const result = e.target?.result as string;
+            setImgSrc(result);
+            const img = new Image();
+            img.onload = () => setAspectRatio(img.naturalWidth / img.naturalHeight);
+            img.src = result;
+        };
         reader.readAsDataURL(imageFile);
         
         // Cleanup function for when the component unmounts
@@ -188,16 +204,25 @@ const ImagePreview = ({ imageFile, onPuzzleSelect, onMultiPuzzleFound, onBack }:
     }, [imageFile]);
 
     useEffect(() => {
-        // Guard against React Strict Mode's double-invocation in development
         if (imgSrc && !scanHasRun.current) {
             scanHasRun.current = true;
-            scanImage();
+            if (initialPuzzles) {
+                // Puzzles were provided, so skip the scan and just display them.
+                setDetectedPuzzles(initialPuzzles);
+                onMultiPuzzleFound(initialPuzzles, imageFile); // This ensures context is consistent if needed
+                const message = initialPuzzles.length > 0 ? `Scan complete! Click a puzzle to begin.` : 'Could not analyze any boards.';
+                setScanProgress({ current: initialPuzzles.length, total: initialPuzzles.length, message });
+                setScanState('done');
+            } else {
+                // Otherwise, perform the scan.
+                scanImage();
+            }
         }
-    }, [imgSrc, scanImage]);
+    }, [imgSrc, scanImage, initialPuzzles, onMultiPuzzleFound, imageFile]);
     
-    const handlePuzzleClick = (fen: string) => {
-        if (fen) {
-            onPuzzleSelect(fen);
+    const handleSelect = (puzzle: DetectedPuzzle) => {
+        if (puzzle.fen) {
+            onPuzzleSelect(puzzle.fen);
         }
     };
 
@@ -248,7 +273,7 @@ const ImagePreview = ({ imageFile, onPuzzleSelect, onMultiPuzzleFound, onBack }:
                                 width: `${uiBox.width * 100}%`, 
                                 height: `${uiBox.height * 100}%` 
                             }} 
-                            onClick={() => handlePuzzleClick(puzzle.fen)}
+                            onClick={() => handleSelect(puzzle)}
                             title={puzzle.fen ? "Click to analyze this puzzle" : "Analysis failed for this area"}
                         >
                             <span className="corner-marker top-left"></span>

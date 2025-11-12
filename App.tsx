@@ -17,8 +17,6 @@ import RegisterView from './components/views/RegisterView';
 import { ProtectedApp } from './components/auth/ProtectedApp';
 import AdminView from './components/views/AdminView';
 import { useAppSettings } from './hooks/useAppSettings';
-import PendingConfirmationView from './components/views/PendingConfirmationView';
-import { authService } from './lib/authService';
 import { AppState } from './lib/types';
 import { soundManager } from './lib/SoundManager';
 import ProfileView from './components/views/ProfileView';
@@ -26,8 +24,7 @@ import { UpdatePrompt } from './components/ui/UpdatePrompt';
 
 const AppContent = () => {
     const { user, isLoggedIn, isLoading, authFlowVisible, requestAuthFlow, hideAuthFlow } = useAuth();
-    const [authScreen, setAuthScreen] = useState<'login' | 'register' | 'pending_confirmation'>('login');
-    const [pendingEmail, setPendingEmail] = useState<string | null>(null);
+    const [authScreen, setAuthScreen] = useState<'login' | 'register'>('login');
     const [appState, setAppState] = useState<AppState>('initial');
     const [previousAppState, setPreviousAppState] = useState<AppState>('initial');
     const [triggerUpload, setTriggerUpload] = useState(false);
@@ -42,7 +39,7 @@ const AppContent = () => {
     const [scanCount, setScanCount] = useState(() => {
         return parseInt(localStorage.getItem('scanCount') || '0', 10);
     });
-
+    
     // Add a class to the body based on the current app state for targeted CSS rules.
     useEffect(() => {
         if (window.location.protocol === 'file:') {
@@ -120,28 +117,11 @@ const AppContent = () => {
         }
     };
     
-    const handleRegisterSuccess = (email: string) => {
-        setPendingEmail(email);
-        setAuthScreen('pending_confirmation');
+    const handleRegisterSuccess = () => {
+        alert("Registration successful! A verification link has been sent to your email. Please verify your account before logging in.");
+        setAuthScreen('login');
     };
     
-    const handleConfirmEmail = async () => {
-        if (!pendingEmail) return false;
-        try {
-            const user = await authService.getPendingUserByEmail(pendingEmail);
-            if(user && user.confirmationToken){
-                await authService.confirmEmail(user.confirmationToken);
-                setAuthScreen('login');
-                alert("Email confirmed successfully! You can now log in.");
-                return true;
-            }
-        } catch (e) {
-            console.error(e);
-            alert("Failed to confirm email.");
-        }
-        return false;
-    };
-
     const handleAuthRequired = () => {
         setAuthScreen('login');
         requestAuthFlow();
@@ -226,13 +206,6 @@ const AppContent = () => {
                                         onRegisterSuccess={handleRegisterSuccess}
                                     />;
                     break;
-                case 'pending_confirmation':
-                    authFlowComponent = <PendingConfirmationView 
-                                        email={pendingEmail!}
-                                        onConfirm={handleConfirmEmail}
-                                        onBackToLogin={() => setAuthScreen('login')}
-                                    />;
-                    break;
                 default:
                     authFlowComponent = <LoginView onRegisterClick={() => setAuthScreen('register')} onCancel={hideAuthFlow} />;
             }
@@ -250,6 +223,8 @@ const AppContent = () => {
                 appSettings={appSettings}
                 onAdminPanelClick={() => handleSetAppState('admin')}
                 onSavedGamesClick={handleSavedGamesClick}
+                // FIX: Pass the handler functions `handleHistoryClick` and `handleProfileClick` instead of calling `handleSetAppState` directly.
+                // This resolves the TypeScript error and correctly uses the handlers that also play a sound.
                 onHistoryClick={handleHistoryClick}
                 onProfileClick={handleProfileClick}
                 triggerUpload={triggerUpload}

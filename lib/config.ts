@@ -7,10 +7,9 @@
 
 /**
  * The Client ID for Google APIs (Sign-In and Drive).
- * It is sourced from a global variable set in index.html to allow pre-React scripts
- * to access it and handle authentication edge cases before the app loads.
+ * This is the Web client ID from the Google Cloud Console for the Firebase project.
  */
-export const GOOGLE_CLIENT_ID = (window as any).GOOGLE_CLIENT_ID;
+export const GOOGLE_CLIENT_ID = '466929233043-2ve4u3lto416b0q3phmgg59948sgiss0.apps.googleusercontent.com';
 
 /**
  * The scope for Google Drive API access.

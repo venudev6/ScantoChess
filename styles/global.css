@@ -9,8 +9,8 @@
   /* Color Palette */
   --primary-color: #6366f1;         /* Main interactive color (buttons, highlights) */
   --primary-hover: #4f46e5;       /* Color for primary elements on hover */
-  --background-color: #F5F5F5;     /* Main page background */
-  --background-color-alt: #F5F5F5; /* Alternative background, if needed */
+  --background-color: #F2EFEB;     /* Main page background */
+  --background-color-alt: #F2EFEB; /* Alternative background, if needed */
   --card-background: transparent;      /* Background for card elements */
   --text-color: #1f2937;           /* Default text color */
   --text-muted-color: #6b7280;     /* Lighter text for secondary info */

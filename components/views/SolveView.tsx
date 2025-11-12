@@ -10,7 +10,7 @@ import Chessboard from '../Chessboard';
 import CapturedPieces from '../ui/CapturedPieces';
 import MoveHistory from '../ui/MoveHistory';
 import { soundManager } from '../../lib/SoundManager';
-import { BackIcon, FlipIcon, FirstMoveIcon, PrevMoveIcon, NextMoveIcon, LastMoveIcon, BookmarkIcon, BookmarkFilledIcon, CheckIcon, CloseIcon, ShareIcon, DownloadIcon, CopyIcon, HomeIcon, AdviceIcon, PlusIcon, SettingsIcon, ArrowRightCircleIcon } from '../ui/Icons';
+import { BackIcon, FlipIcon, FirstMoveIcon, PrevMoveIcon, NextMoveIcon, LastMoveIcon, BookmarkIcon, BookmarkFilledIcon, CheckIcon, CloseIcon, PencilIcon, DownloadIcon, CopyIcon, HomeIcon, AdviceIcon, PlusIcon, SettingsIcon, ArrowRightCircleIcon } from '../ui/Icons';
 import { PIECE_SETS, PIECE_NAMES } from '../../lib/chessConstants';
 import { useChessGame } from '../../hooks/useChessGame';
 import { useBoardDrawing } from '../../hooks/useBoardDrawing';
@@ -157,7 +157,6 @@ const SolveView = ({
     
     const stockfish = useStockfish();
     const [playerSide, setPlayerSide] = useState<'w' | 'b' | null>(null);
-    const [isShareModalOpen, setIsShareModalOpen] = useState(false);
     const isMakingEngineMove = useRef(false);
     const [isAnalysisModalOpen, setIsAnalysisModalOpen] = useState(false);
     const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
@@ -463,7 +462,7 @@ const SolveView = ({
                         <button className="btn-icon" onClick={() => { soundManager.play('UI_CLICK'); handleNextMove(); }} disabled={historyIndex >= mainLineHistory.length - 1} aria-label="Next move" title="Go to next move"><NextMoveIcon /></button>
                         <button className="btn-icon" onClick={() => { soundManager.play('UI_CLICK'); handleLastMove(); }} disabled={historyIndex >= mainLineHistory.length - 1} aria-label="Last move" title="Go to the last move"><LastMoveIcon /></button>
                         <button ref={bookmarkButtonRef} className={`btn-icon ${bookmarkedGame ? 'bookmarked' : ''}`} onClick={handleBookmarkClick} title={bookmarkedGame ? "Edit Bookmark" : "Bookmark Game"} aria-label={bookmarkedGame ? "Edit Bookmark" : "Bookmark Game"}>{bookmarkedGame ? <BookmarkFilledIcon /> : <BookmarkIcon />}</button>
-                        <button className="btn-icon" onClick={() => setIsShareModalOpen(true)} title="Share Position" aria-label="Share Position"><ShareIcon /></button>
+                        <button className="btn-icon" onClick={onBack} title="Edit Board" aria-label="Edit Board"><PencilIcon /></button>
                     </div>
                     <BookmarkModal isOpen={isBookmarkModalOpen} onClose={() => setIsBookmarkModalOpen(false)} onSave={handleSaveBookmark} onRemove={handleRemoveBookmark} initialGame={bookmarkedGame} anchorRect={bookmarkAnchorRect} />
 
@@ -488,13 +487,6 @@ const SolveView = ({
 
                 {promotionMove && createPortal( <div className="promotion-overlay" onClick={() => handlePromotion(null)}><div className="promotion-choices" onClick={e => e.stopPropagation()}>{(['q', 'r', 'b', 'n'] as PieceSymbol[]).map(p => { const PieceComponent = PIECE_COMPONENTS[turn as PieceColor][p]; return ( <PieceComponent key={p} className="piece" aria-label={`Promote to ${PIECE_NAMES[p]}`} onClick={() => handlePromotion(p as ChessJSPieceSymbol)} /> ); })}</div></div>, document.body )}
                 
-                <ShareModal 
-                    isOpen={isShareModalOpen} 
-                    onClose={() => setIsShareModalOpen(false)} 
-                    chessInstance={game}
-                    history={mainLineHistory}
-                    initialFen={initialFen}
-                />
                  {isAnalysisModalOpen && createPortal(
                     <div className="bookmark-modal-overlay" onClick={() => setIsAnalysisModalOpen(false)}>
                         <div className="bookmark-modal" onClick={(e) => e.stopPropagation()}>
