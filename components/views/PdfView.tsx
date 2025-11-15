@@ -60,6 +60,12 @@ const expandBox = (box: BoundingBox, percent: number): BoundingBox => {
     return { x: newX, y: newY, width: newWidth, height: newHeight };
 };
 
+// --- Module-level PDF cache to avoid reload flicker ---
+const pdfCache = new Map<string, { doc: PDFDocumentProxy; lastUsed: number; destroyTimer?: number }>();
+
+function fileFingerprint(file: File) {
+  return `${file.name}_${file.size}_${(file as any).lastModified ?? 0}`;
+}
 
 interface PdfViewProps {
   pdfId: number;
@@ -309,36 +315,95 @@ const ThumbRenderer = memo(({ pdfDoc, pageNumber, currentPage, onClick, thumb, o
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // --- PDF loading effect replaced to add caching and delayed destroy to avoid flicker ---
   useEffect(() => {
-    const url = URL.createObjectURL(pdfFile);
+    let isCancelled = false;
+    const fingerprint = fileFingerprint(pdfFile);
+    const cached = pdfCache.get(fingerprint);
+
+    // If cached doc exists, reuse it
+    if (cached) {
+      // cancel pending destroy if any
+      if (cached.destroyTimer) {
+        window.clearTimeout(cached.destroyTimer);
+        cached.destroyTimer = undefined;
+      }
+      cached.lastUsed = Date.now();
+
+      setPdfDoc(cached.doc);
+      setNumPages(cached.doc.numPages);
+      setIsDocLoading(false);
+      setError(null);
+
+      // Ensure we have a viewport for page 1 if not present
+      if (!pageViewports.has(1)) {
+        cached.doc.getPage(1).then(firstPage => {
+          const viewport = firstPage.getViewport({ scale: 1, rotation: firstPage.rotate });
+          setPageViewport({ width: viewport.width, height: viewport.height });
+          setPageViewports(prev => new Map(prev).set(1, { width: viewport.width, height: viewport.height }));
+          firstPage.cleanup();
+        }).catch(err => console.error("cached getPage(1) failed", err));
+      }
+      return () => { /* noop for reuse path */ };
+    }
+
+    // Not cached: load from blob URL
     setIsDocLoading(true);
     setError(null);
-    setPdfDoc(null);
-    setNumPages(0);
 
+    const url = URL.createObjectURL(pdfFile);
     const loadingTask = pdfjsLib.getDocument(url);
+
     loadingTask.promise.then(async (pdf) => {
-        setPdfDoc(pdf);
-        setNumPages(pdf.numPages);
-        
+      if (isCancelled) {
+        // If cancelled, destroy defensive
+        try { pdf.destroy(); } catch (e) { /* ignore */ }
+        return;
+      }
+
+      // store in cache
+      pdfCache.set(fingerprint, { doc: pdf, lastUsed: Date.now() });
+
+      setPdfDoc(pdf);
+      setNumPages(pdf.numPages);
+
+      try {
         const firstPage = await pdf.getPage(1);
         const viewport = firstPage.getViewport({ scale: 1, rotation: firstPage.rotate });
-        const firstPageViewport = { width: viewport.width, height: viewport.height };
-        setPageViewport(firstPageViewport);
-        setPageViewports(prev => new Map(prev).set(1, firstPageViewport));
-        
+        setPageViewport({ width: viewport.width, height: viewport.height });
+        setPageViewports(prev => new Map(prev).set(1, { width: viewport.width, height: viewport.height }));
         firstPage.cleanup();
-        setIsDocLoading(false);
+      } catch (err) {
+        console.error("Error reading first page viewport", err);
+      }
+
+      setIsDocLoading(false);
     }).catch(error => {
+      if (!isCancelled) {
         console.error("Error loading PDF:", error);
         setError("Failed to load PDF document.");
         setIsDocLoading(false);
+      }
     }).finally(() => {
-        URL.revokeObjectURL(url);
+      URL.revokeObjectURL(url);
     });
 
     return () => {
-        loadingTask.destroy();
+      isCancelled = true;
+      // Delay destroy so quick navigations back to the PDF reuse cached doc.
+      const entry = pdfCache.get(fingerprint);
+      if (entry && !entry.destroyTimer) {
+        // schedule destroy in 5s (adjust as needed)
+        entry.destroyTimer = window.setTimeout(() => {
+          try {
+            entry.doc.destroy();
+          } catch (e) { /* ignore */ }
+          pdfCache.delete(fingerprint);
+        }, 5000);
+      } else if (!entry) {
+        // if we didn't cache (loading failed), attempt to cancel loadingTask safely
+        try { (loadingTask as any)?.destroy(); } catch (e) { /* ignore */ }
+      }
     };
   }, [pdfFile]);
 
@@ -650,7 +715,10 @@ const ThumbRenderer = memo(({ pdfDoc, pageNumber, currentPage, onClick, thumb, o
       if (tempCtx) {
           tempCtx.fillStyle = '#FFFFFF';
           tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
-          await page.render({ canvasContext: tempCtx, viewport: tempViewport }).promise;
+          // FIX: Add 'canvas' property to render parameters to satisfy TypeScript compiler.
+          // The type definition in this environment seems to require it, even though it's
+          // redundant when canvasContext is provided.
+          await page.render({ canvasContext: tempCtx, viewport: tempViewport, canvas: tempCanvas } as any).promise;
 
           const finalFile = await resizeAndExportImage(
             tempCanvas,
@@ -752,7 +820,6 @@ const ThumbRenderer = memo(({ pdfDoc, pageNumber, currentPage, onClick, thumb, o
       const containerWidth = mainViewRef.current.clientWidth - 48;
       const containerHeight = mainViewRef.current.clientHeight - 48;
       const scaleX = containerWidth / pageViewport.width;
-      // FIX: Corrected a typo from `viewport.height` to `pageViewport.height`.
       const scaleY = containerHeight / pageViewport.height;
       setZoom(Math.min(scaleX, scaleY));
       setIsOptionsOpen(false);
